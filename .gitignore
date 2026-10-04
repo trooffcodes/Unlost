@@ -1,0 +1,17 @@
+# Python environments and cache
+.venv/
+__pycache__/
+*.pyc
+
+# Local database and vector storage (Step 6)
+chroma_db/
+*.sqlite3
+*.db
+
+# File ingestion and optimization folders (Steps 1, 10, 11)
+/uploads/
+/extracted_files/
+/temp_processing/
+
+# Secrets and API keys (Step 14)
+.env

@@ -1,0 +1,6 @@
+flask
+filetype
+python-dotenv
+pillow
+requests
+pytesseract

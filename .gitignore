@@ -1,17 +1,18 @@
-# Python environments and cache
-.venv/
+# Ignore Python environments
+backend/.venv/
 __pycache__/
 *.pyc
+*.toml
+*.json
 
-# Local database and vector storage (Step 6)
-chroma_db/
-*.sqlite3
+/uploads
+
+# Ignore test files and databases
+*.pdf
+*.png
 *.db
+Steps.txt
+Next.txt
 
-# File ingestion and optimization folders (Steps 1, 10, 11)
-/uploads/
-/extracted_files/
-/temp_processing/
-
-# Secrets and API keys (Step 14)
+# Ignore secrets
 .env

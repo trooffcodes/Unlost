@@ -1,0 +1,22 @@
+.drop-zone {
+    width: 400px;
+    height: 200px;
+    border: 2px dashed #888;
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    cursor: pointer;
+    color: #666;
+}
+
+.drop-zone.dragover {
+    border-color: #007bff;
+    background: #f0f7ff;
+}
+
+.drop-zone input {
+    display: none;
+}

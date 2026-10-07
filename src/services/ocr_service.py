@@ -21,9 +21,6 @@ def ocr_space_file(filename, language='eng'):
     result = r.json()
     return result['ParsedResults'][0]['ParsedText']
 
-# 'helloworld' works for quick testing; register on ocr.space for a free personal key
-s = perf_counter()
 text = ocr_space_file('test.png')
-e = perf_counter()
 print(text)
 print(f"Time Took: {e-s}")

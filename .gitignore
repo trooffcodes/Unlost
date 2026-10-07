@@ -4,8 +4,10 @@ __pycache__/
 *.pyc
 *.toml
 *.json
+*.log
 
 /uploads
+/tests
 
 # Ignore test files and databases
 *.pdf

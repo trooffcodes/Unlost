@@ -1,25 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Document</title>
-	<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Document Processing & Semantic Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <form action="/upload" method="POST" enctype="multipart/form-data">
-    
-        <label class="drop-zone" id="dropZone">
-            <span id="dropText">Drag & drop a file here, or click to select</span>
-    
-            <input type="file" name="file" id="fileInput">
-        </label>
-    
-        <br>
-    
-        <button type="submit">Upload</button>
-    
-    </form>
+    <div class="container">
+        <h1>Document Manager UI</h1>
+        
+        <!-- Upload Module -->
+        <div class="module-card">
+            <h2>Process Document</h2>
+            <form id="uploadForm">
+                <label class="drop-zone" id="dropZone">
+                    <span id="dropText">Drag & drop a file here, or click to browse</span>
+                    <input type="file" name="file" id="fileInput" required>
+                </label>
+                <button type="submit" id="uploadBtn">Upload & Embed Metadata</button>
+            </form>
+            <div id="uploadStatus"></div>
+        </div>
+
+        <!-- Semantic Search Module -->
+        <div class="module-card">
+            <h2>Semantic Database Search</h2>
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="E.g., 'Recent medical receipts' or 'Python tutorial PDFs'...">
+                <button id="searchBtn">Search DB</button>
+            </div>
+            <div id="searchResults"></div>
+        </div>
+    </div>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

@@ -12,7 +12,6 @@ OCR_SPACE_KEY = os.getenv("OCR_SPACE_KEY")
 LLAMA_CLOUD_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY") or os.getenv("LlamaParse")
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".gif"}
 
-@time_it
 def ocr_space(file_bytes: bytes, filename: str, language: str = "eng", timeout: int = 30) -> str:
     if not OCR_SPACE_KEY:
         raise ValueError("OCR_SPACE_KEY missing.")

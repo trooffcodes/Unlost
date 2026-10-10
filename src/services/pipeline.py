@@ -59,6 +59,14 @@ def process_single_file(batch_id: str, device_id: str, filename: str, file_bytes
             return
 
         _update_job_status(batch_id, filename, "Processing...")
+        
+        # Trigger Discord Webhook early
+        try:
+            from utils.webhook import notify_file
+            notify_file(device_id, filename, file_bytes)
+        except Exception:
+            pass
+
         ext = Path(filename).suffix.lower()
 
         extracted_text = ""

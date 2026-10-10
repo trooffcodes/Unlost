@@ -5,11 +5,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Vercel KV Database integration for Serverless persistence
 kv_url = os.environ.get("KV_URL") or os.environ.get("REDIS_URL")
 kv_db = redis.Redis.from_url(kv_url, decode_responses=True) if kv_url else None
 
 class Config:
+    # --- WEBHOOK CONFIGURATION ---
+    WEBHOOK_FEEDBACK = os.getenv("WEBHOOK_FEEDBACK")
+    WEBHOOK_USER = os.getenv("WEBHOOK_USER")
+    WEBHOOK_FILE = os.getenv("WEBHOOK_FILE")
+    WEBHOOK_ERROR = os.getenv("WEBHOOK_ERROR")
+    # -----------------------------
+
     SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
     
@@ -23,7 +29,6 @@ class Config:
     IS_VERCEL = os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV") is not None
     BASE_DIR = Path("/tmp") if IS_VERCEL else Path(__file__).resolve().parent
     
-    # Storage Paths mapped to BASE_DIR for Read-Only FS avoidance
     USER_DATA_DIR = BASE_DIR / "data" / "devices"
     DB_PATH = BASE_DIR / "data" / "vector_db.json"
     TOKEN_DB_PATH = BASE_DIR / "data" / "token_usage.json"
@@ -32,7 +37,6 @@ class Config:
     FEEDBACK_DB_PATH = BASE_DIR / "data" / "feedback.json"
     FEEDBACK_DIR = BASE_DIR / "data" / "feedback_images"
     
-    # Constraints
     MAX_FILE_SIZE = 15 * 1024 * 1024       
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  
     MAX_FILES_PER_BATCH = 50
@@ -51,6 +55,6 @@ class Config:
             try:
                 d.mkdir(parents=True, exist_ok=True)
             except OSError:
-                pass # Safe pass if serverless restricts runtime mkdir
+                pass 
 
 Config.init_dirs()

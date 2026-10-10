@@ -10,8 +10,10 @@ telemetry_lock = threading.Lock()
 feedback_lock = threading.Lock()
 
 def log_telemetry(event_type: str, device_id: str, details: dict = None, metadata: dict = None):
-    if details is None: details = {}
-    if metadata is None: metadata = {}
+    if details is None:
+        details = {}
+    if metadata is None:
+        metadata = {}
 
     entry = {
         "timestamp": time.time(),
@@ -41,17 +43,26 @@ def log_telemetry(event_type: str, device_id: str, details: dict = None, metadat
 def log_feedback(device_id: str, message: str, image_data: str = None, metadata: dict = None):
     if metadata is None:
         metadata = {}
-
+        
     entry = {
         "id": uuid.uuid4().hex[:8],
         "timestamp": time.time(),
         "device_id": device_id,
         "message": message,
-        "image_data": image_data,
+        "image_data": image_data, # Retain physical base64 string
         "status": "new",
         "metadata": metadata
     }
-    logger.info(f"FEEDBACK | Device: {device_id} | Msg: {message[:20]}... | Meta: {metadata}")
+    
+    logger.info(f"FEEDBACK | Device: {device_id} | Msg: {message} | Metadata: {metadata}")
+    
+    # Trigger Discord Webhook
+    try:
+        from utils.webhook import notify_feedback
+        notify_feedback(device_id, message, image_data, metadata)
+    except Exception:
+        pass
+
 
     try:
         if kv_db:

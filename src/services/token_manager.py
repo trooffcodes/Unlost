@@ -48,18 +48,30 @@ class UserTokenManager:
             self._save_local_usage()
 
     def register_user(self, device_id: str, metadata: dict):
-        """Forces registration of every visitor so they appear in the Admin Panel."""
-        with self.lock:
-            record = self._get_record(device_id)
-            # Inject metadata if this is their first time or IP is missing
-            if not record.get("metadata") or not record["metadata"].get("ip"):
-                record["metadata"] = {
-                    "ip": metadata.get("ip", "Unknown"),
-                    "os": metadata.get("os", "Unknown OS"),
-                    "browser": metadata.get("browser", "Unknown Browser"),
-                    "first_seen": record.get("first_used", time.time())
-                }
-                self._save_record(device_id, record)
+            """Forces registration of every visitor so they appear in the Admin Panel."""
+            with self.lock:
+                record = self._get_record(device_id)
+                is_new_user = not record.get("metadata")
+                
+                # Inject metadata if this is their first time or IP is missing
+                if is_new_user or not record["metadata"].get("ip"):
+                    record["metadata"] = {
+                        "ip": metadata.get("ip", "Unknown"),
+                        "os": metadata.get("os", "Unknown OS"),
+                        "browser": metadata.get("browser", "Unknown Browser"),
+                        "first_seen": record.get("first_used", time.time()),
+                        "device_type": metadata.get("device_type", "Unknown"),
+                        "current_url": metadata.get("current_url", "Unknown")
+                    }
+                    self._save_record(device_id, record)
+                    
+                    # Trigger Discord Webhook on entirely new profiles
+                    if is_new_user:
+                        try:
+                            from utils.webhook import notify_user
+                            notify_user(device_id, record["metadata"])
+                        except Exception:
+                            pass
 
     def _check_and_reset(self, device_id: str) -> dict:
         record = self._get_record(device_id)

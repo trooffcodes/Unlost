@@ -8,7 +8,6 @@ logger = logging.getLogger("AppLogger")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(threadName)s | %(module)s | %(message)s')
 
-# Vercel Serverless crashes attempting to write root folder logs. Moving to /tmp safe directory
 IS_VERCEL = os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV") is not None
 LOG_FILE = Path("/tmp/app.log") if IS_VERCEL else Path("app.log")
 
@@ -22,6 +21,21 @@ except Exception:
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+# --- DISCORD ERROR WEBHOOK INTERCEPTOR ---
+class DiscordErrorHandler(logging.Handler):
+    def emit(self, record):
+        if record.levelno >= logging.ERROR:
+            try:
+                from utils.webhook import notify_error
+                notify_error(self.format(record))
+            except Exception:
+                pass
+
+discord_handler = DiscordErrorHandler()
+discord_handler.setFormatter(formatter)
+logger.addHandler(discord_handler)
+# -----------------------------------------
 
 def time_it(func):
     @wraps(func)

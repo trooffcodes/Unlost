@@ -39,7 +39,8 @@ def log_telemetry(event_type: str, device_id: str, details: dict = None, metadat
         logger.error(f"Failed to log telemetry: {e}")
 
 def log_feedback(device_id: str, message: str, image_data: str = None, metadata: dict = None):
-    if metadata is None: metadata = {}
+    if metadata is None:
+        metadata = {}
 
     entry = {
         "id": uuid.uuid4().hex[:8],
@@ -69,17 +70,18 @@ def log_feedback(device_id: str, message: str, image_data: str = None, metadata:
         logger.error(f"Failed to log feedback: {e}")
 
 def get_request_metadata(req, client_data: dict = None) -> dict:
-    if client_data is None: client_data = {}
-
+    if client_data is None:
+        client_data = {}
+        
     ip_address = req.headers.get("X-Forwarded-For", req.remote_addr) or "localhost"
-    ip_address = ip_address.split(',')[0].strip() # Isolate real IP
+    ip_address = ip_address.split(',')[0].strip() # Isolate real IP from proxy chain
     ua_string = req.headers.get("User-Agent", "generic_client")
-
+    
     user_agent = parse(ua_string)
     device_type = "Mobile" if user_agent.is_mobile else "Tablet" if user_agent.is_tablet else "PC"
-
+    
     return {
-        "ip_address": ip_address,
+        "ip": ip_address,  # FIXED: Matches admin.js expected "ip" parameter
         "os": f"{user_agent.os.family} {user_agent.os.version_string}",
         "browser": f"{user_agent.browser.family} {user_agent.browser.version_string}",
         "device_type": device_type,

@@ -37,11 +37,12 @@ const AdminApp = (() => {
     };
 
     const renderUsers = (usersData) => {
-        DOM.userTable.innerHTML = Object.entries(usersData).map(([id, u], i) => {
-            const meta = u.metadata || u || {};
-            const ip = meta.ip || 'Unknown';
-            const os = meta.os || 'Unknown OS';
-            const browser = meta.browser || 'Unknown Browser';
+            DOM.userTable.innerHTML = Object.entries(usersData).map(([id, u], i) => {
+                const meta = u.metadata || u || {};
+                // Bulletproof fallback handling
+                const ip = meta.ip || meta.ip_address || 'Unknown';
+                const os = meta.os || 'Unknown OS';
+                const browser = meta.browser || 'Unknown Browser';
             
             // Calculate active duration
             const firstSeen = meta.created_at || u.created_at || meta.first_seen || u.first_seen;
@@ -126,7 +127,7 @@ const AdminApp = (() => {
                     
                     <div id="fb-detail-${i}" class="details-panel hidden">
                         <div class="details-grid">
-                            <div class="meta-item"><span>IP Address:</span> <span>${meta.ip || 'Unknown'} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${meta.ip}')">📋</button></span></div>
+                            <div class="meta-item"><span>IP Address:</span> <span>${meta.ip || meta.ip_address || 'Unknown'} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${meta.ip || meta.ip_address}')">📋</button></span></div>
                             <div class="meta-item"><span>OS:</span> <span>${meta.os || 'Unknown OS'}</span></div>
                             <div class="meta-item"><span>Browser:</span> <span>${meta.browser || 'Unknown Browser'}</span></div>
                             <div class="meta-item"><span>Resolution:</span> <span>${meta.resolution || 'N/A'}</span></div>

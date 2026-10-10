@@ -16,7 +16,7 @@ class UserTokenManager:
                     data = json.load(f)
                     for k, v in data.items():
                         if isinstance(v, int):
-                            data[k] = {"used": v, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS}
+                            data[k] = {"used": v, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}}
                     return data
             except Exception as e:
                 logger.error(f"Failed to load token usage: {e}")
@@ -34,10 +34,10 @@ class UserTokenManager:
             val = kv_db.get(f"token_usage:{device_id}")
             if val:
                 return json.loads(val)
-            return {"used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS}
+            return {"used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}}
         else:
             return self.user_usage.setdefault(device_id, {
-                "used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS
+                "used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}
             })
 
     def _save_record(self, device_id: str, record: dict):
@@ -46,6 +46,20 @@ class UserTokenManager:
         else:
             self.user_usage[device_id] = record
             self._save_local_usage()
+
+    def register_user(self, device_id: str, metadata: dict):
+        """Forces registration of every visitor so they appear in the Admin Panel."""
+        with self.lock:
+            record = self._get_record(device_id)
+            # Inject metadata if this is their first time or IP is missing
+            if not record.get("metadata") or not record["metadata"].get("ip"):
+                record["metadata"] = {
+                    "ip": metadata.get("ip", "Unknown"),
+                    "os": metadata.get("os", "Unknown OS"),
+                    "browser": metadata.get("browser", "Unknown Browser"),
+                    "first_seen": record.get("first_used", time.time())
+                }
+                self._save_record(device_id, record)
 
     def _check_and_reset(self, device_id: str) -> dict:
         record = self._get_record(device_id)
@@ -78,10 +92,19 @@ class UserTokenManager:
     def get_all_users(self) -> dict:
         if kv_db:
             users = {}
-            for key in kv_db.scan_iter(match="token_usage:*"):
-                dev_id = key.split(":", 1)[1]
-                users[dev_id] = json.loads(kv_db.get(key))
+            try:
+                # Fast Multi-Get (mget) prevents slow scans from timing out on Vercel
+                keys = list(kv_db.scan_iter(match="token_usage:*"))
+                if keys:
+                    values = kv_db.mget(keys)
+                    for k, v in zip(keys, values):
+                        if v:
+                            dev_id = k.split(":", 1)[1]
+                            users[dev_id] = json.loads(v)
+            except Exception as e:
+                logger.error(f"Failed pulling user KV list: {e}")
             return users
+            
         with self.lock:
             return dict(self.user_usage)
 

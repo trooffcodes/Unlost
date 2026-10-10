@@ -95,7 +95,8 @@ def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
 
     for _ in range(max(1, len(groq_manager.keys))):
             key = groq_manager.get_key()
-            if not key: break
+            if not key:
+                break
             try:
                 res = requests.post(
                     "https://api.groq.com/openai/v1/chat/completions",

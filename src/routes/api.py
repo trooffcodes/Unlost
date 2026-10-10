@@ -63,6 +63,10 @@ def get_files():
 @api_bp.route("/usage", methods=["GET"])
 def get_usage():
     device_id = get_device_id(request)
+    
+    meta = get_request_metadata(request)
+    user_token_manager.register_user(device_id, meta)
+    
     return jsonify({"success": True, "data": user_token_manager.get_usage_stats(device_id)})
 
 @api_bp.route("/clear_data", methods=["POST"])

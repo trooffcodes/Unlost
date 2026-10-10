@@ -21,6 +21,8 @@ class Config:
     
     GROQ_KEYS = [k for k in [os.getenv("GROQ_API_KEY"), os.getenv("GROQ_API_KEY2")] if k]
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    OCR_SPACE_KEY = os.getenv("OCR_SPACE_KEY")
+    LLAMA_CLOUD_API_KEY = os.getenv("LlamaParse")
     
     GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
@@ -40,7 +42,7 @@ class Config:
     MAX_FILE_SIZE = 15 * 1024 * 1024       
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  
     MAX_FILES_PER_BATCH = 50
-    MAX_USER_TOKENS = 20_000
+    MAX_USER_TOKENS = 5_000
     
     ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
     ALLOWED_PDF_EXT = {".pdf"}

@@ -5,3 +5,4 @@ pillow
 requests
 user_agents
 redis
+pymupdf

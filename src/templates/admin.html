@@ -22,7 +22,6 @@
             <button class="admin-tab" data-target="feedbackView">Feedback</button>
         </div>
 
-        <!-- Users View -->
         <section id="usersView" class="module-card admin-section">
             <h2>Device Token Management</h2>
             <div class="table-responsive">
@@ -30,24 +29,24 @@
                     <thead>
                         <tr>
                             <th>Device Fingerprint (SHA-256)</th>
+                            <th>Active For</th> <!-- NEW COLUMN -->
                             <th>Used Tokens / Custom Limit</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="userTable">
-                        <tr><td colspan="3">Fetching secure user registries...</td></tr>
+                        <!-- Updated fallback span -->
+                        <tr><td colspan="4">Fetching secure user registries...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <!-- Telemetry View -->
         <section id="telemetryView" class="module-card admin-section hidden">
             <h2>Live Telemetry Stream</h2>
             <pre class="log-box" id="logView">Establishing telemetry uplink...</pre>
         </section>
 
-        <!-- Feedback View -->
         <section id="feedbackView" class="module-card admin-section hidden">
             <h2>User Feedback Queue</h2>
             <div class="feedback-grid" id="feedbackContainer">

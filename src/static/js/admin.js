@@ -32,7 +32,7 @@ const AdminApp = (() => {
 
         } catch (err) {
             console.error("Admin Data Error:", err);
-            DOM.userTable.innerHTML = `<tr><td colspan='3' style="color: var(--danger)">Connection restricted. See console.</td></tr>`;
+            DOM.userTable.innerHTML = `<tr><td colspan='4' style="color: var(--danger)">Connection restricted. See console.</td></tr>`;
         }
     };
 
@@ -43,12 +43,29 @@ const AdminApp = (() => {
             const os = meta.os || 'Unknown OS';
             const browser = meta.browser || 'Unknown Browser';
             
+            // Calculate active duration
+            const firstSeen = meta.created_at || u.created_at || meta.first_seen || u.first_seen;
+            let activeStr = 'N/A';
+            if (firstSeen) {
+                // Handle both second and millisecond unix timestamps natively
+                const firstSeenMs = firstSeen > 1000000000000 ? firstSeen : firstSeen * 1000;
+                const diffMs = Date.now() - firstSeenMs;
+                const diffDays = Math.floor(diffMs / 86400000);
+                const diffHours = Math.floor((diffMs % 86400000) / 3600000);
+                const diffMins = Math.floor((diffMs % 3600000) / 60000);
+                
+                if (diffDays > 0) activeStr = `${diffDays}d ${diffHours}h`;
+                else if (diffHours > 0) activeStr = `${diffHours}h ${diffMins}m`;
+                else activeStr = `${diffMins}m`;
+            }
+            
             return `
                 <tr class="main-row">
                     <td>
                         <button class="expand-btn" onclick="window.AdminApp.toggleRow('user-detail-${i}', this)" title="Show Metadata">▼</button>
                         <code>${id.substring(0,8)}...</code>
                     </td>
+                    <td><span style="color: var(--info)">${activeStr}</span></td>
                     <td><strong>${u.used}</strong> / ${u.custom_limit || 20000}</td>
                     <td>
                         <button class="btn-sm bg-red" onclick="window.AdminApp.execAction('${id}', 'reset')">Reset</button>
@@ -56,7 +73,7 @@ const AdminApp = (() => {
                     </td>
                 </tr>
                 <tr id="user-detail-${i}" class="details-row hidden">
-                    <td colspan="3">
+                    <td colspan="4">
                         <div class="details-panel">
                             <div class="details-grid">
                                 <div class="meta-item"><span>Device ID:</span> <span>${id} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${id}')">📋</button></span></div>
@@ -68,7 +85,7 @@ const AdminApp = (() => {
                     </td>
                 </tr>
             `;
-        }).join("") || "<tr><td colspan='3'>No devices active.</td></tr>";
+        }).join("") || "<tr><td colspan='4'>No devices active.</td></tr>";
     };
 
     const renderTelemetry = (telemetryData) => {
@@ -85,12 +102,14 @@ const AdminApp = (() => {
             const dateStr = new Date(f.timestamp * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             const statusBadge = f.status === 'new' ? `<span class="badge badge-new">NEW</span>` : '';
             
-            // Derive mobile status for primary icon
             const userAgent = meta.user_agent || meta.userAgent || f.user_agent || '';
             const isMobile = /Mobi|Android|iPhone|iPad/i.test(userAgent) || meta.device_type === 'mobile';
             const deviceIcon = isMobile ? '📱' : '💻';
             
-            const imgHTML = f.image ? `<img src="/admin/feedback/image/${f.image}" class="feedback-thumb" onclick="window.AdminApp.openLightbox('/admin/feedback/image/${f.image}', event)" loading="lazy" alt="Screenshot">` : '';
+            // Extract from memory base64 (Vercel fix) OR fallback to physical disk
+            const imgHTML = f.image_data 
+                ? `<img src="${f.image_data}" class="feedback-thumb" onclick="window.AdminApp.openLightbox(this.src, event)" loading="lazy" alt="Screenshot">` 
+                : (f.image ? `<img src="/admin/feedback/image/${f.image}" class="feedback-thumb" onclick="window.AdminApp.openLightbox(this.src, event)" loading="lazy" alt="Screenshot">` : '');
             
             return `
                 <div class="card feedback-card">
@@ -151,7 +170,6 @@ const AdminApp = (() => {
                 const isHidden = el.classList.contains('hidden');
                 el.classList.toggle('hidden');
                 
-                // Flip chevron visually based on context
                 if (btn.innerText.includes('▼')) btn.innerText = isHidden ? '▲' : '▼';
                 else if (btn.innerText.includes('Details')) btn.innerText = isHidden ? '[-] Hide Details' : '[+] Details';
             }

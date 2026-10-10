@@ -1,6 +1,7 @@
 import hashlib
 import shutil
 import uuid
+import base64
 from pathlib import Path
 from flask import Blueprint, jsonify, request, render_template, Response, send_from_directory
 from functools import wraps
@@ -17,9 +18,29 @@ from services.token_manager import user_token_manager
 api_bp = Blueprint("api", __name__)
 
 def get_device_id(req) -> str:
+    # 1. Use the secure cookie primarily so mobile IPs bouncing around don't alter ID
+    if "device_id" in req.cookies:
+        return req.cookies["device_id"]
+        
+    # 2. Fallback to IP+UA for the immediate initialization
     ip = req.headers.get("X-Forwarded-For", req.remote_addr) or "localhost"
     ua = req.headers.get("User-Agent", "generic_client")
     return hashlib.sha256(f"{ip}_{ua}".encode("utf-8")).hexdigest()[:16]
+
+@api_bp.after_request
+def set_device_cookie(response):
+    # Set a persistent 10-year device ID lock in the client's browser
+    if not request.cookies.get("device_id"):
+        device_id = get_device_id(request)
+        response.set_cookie(
+            "device_id", 
+            device_id, 
+            max_age=315360000, 
+            secure=True, 
+            httponly=True, 
+            samesite="None"
+        )
+    return response
 
 def make_safe_filename(original_name: str) -> str:
     safe = secure_filename(original_name)
@@ -116,7 +137,6 @@ def submit_feedback():
     message = request.form.get("message", "").strip()
     image_file = request.files.get("image")
     
-    # Extract client metadata sent from the frontend
     client_data = {
         "resolution": request.form.get("resolution"),
         "time_on_page": request.form.get("time_on_page"),
@@ -124,15 +144,16 @@ def submit_feedback():
     }
     metadata = get_request_metadata(request, client_data)
     
-    image_filename = None
+    image_data = None
     if image_file and image_file.filename:
-        image_filename = make_safe_filename(image_file.filename)
-        Config.FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
-        image_path = Config.FEEDBACK_DIR / image_filename
-        image_file.save(image_path)
+        # VERCEL PROOF: Encode image payload to Base64 to bypass Vercel Ephemeral File System deletion
+        img_bytes = image_file.read()
+        b64_encoded = base64.b64encode(img_bytes).decode('utf-8')
+        mime_type = image_file.mimetype or "image/png"
+        image_data = f"data:{mime_type};base64,{b64_encoded}"
     
-    if message or image_filename:
-        log_feedback(device_id, message, image_filename, metadata)
+    if message or image_data:
+        log_feedback(device_id, message, image_data, metadata)
         
     return jsonify({"success": True, "message": "Feedback submitted successfully"})
 
@@ -168,37 +189,48 @@ def admin_page():
 @api_bp.route("/admin/api/data")
 @requires_admin
 def admin_data():
+    import json
     telemetry = []
     feedback = []
     
-    if Config.TELEMETRY_DB_PATH.exists():
+    # Check for Vercel KV Database Persistence Mode First
+    from utils.telemetry import db
+    if db:
         try:
-            import json
-            with open(Config.TELEMETRY_DB_PATH, "r", encoding="utf-8") as f:
-                telemetry = json.load(f)
-        except Exception:
-            pass
+            telemetry_raw = db.lrange("telemetry_logs", 0, 49)
+            telemetry = [json.loads(t) for t in telemetry_raw]
             
-    if hasattr(Config, 'FEEDBACK_DB_PATH') and Config.FEEDBACK_DB_PATH.exists():
-        try:
-            import json
-            with open(Config.FEEDBACK_DB_PATH, "r", encoding="utf-8") as f:
-                feedback = json.load(f)
-        except Exception:
-            pass
+            feedback_raw = db.lrange("feedback_logs", 0, -1)
+            feedback = [json.loads(f) for f in feedback_raw]
+        except Exception as e:
+            logger.error(f"Vercel KV Load Error: {e}")
+    else:
+        # Fallback to unreliable Local Drive format if Redis unconfigured
+        if Config.TELEMETRY_DB_PATH.exists():
+            try:
+                with open(Config.TELEMETRY_DB_PATH, "r", encoding="utf-8") as f:
+                    telemetry = json.load(f)[-50:][::-1]
+            except Exception:
+                pass
+                
+        if hasattr(Config, 'FEEDBACK_DB_PATH') and Config.FEEDBACK_DB_PATH.exists():
+            try:
+                with open(Config.FEEDBACK_DB_PATH, "r", encoding="utf-8") as f:
+                    feedback = json.load(f)[::-1] 
+            except Exception:
+                pass
 
     return jsonify({
         "success": True,
         "users": user_token_manager.get_all_users(),
-        "telemetry": telemetry[-50:][::-1],
-        "feedback": feedback[::-1] # Send newest feedback first
+        "telemetry": telemetry,
+        "feedback": feedback 
     })
 
 @api_bp.route("/admin/feedback/image/<filename>")
 @requires_admin
 def serve_feedback_image(filename):
     return send_from_directory(Config.FEEDBACK_DIR, filename)
-
 
 @api_bp.route("/admin/api/user", methods=["POST"])
 @requires_admin

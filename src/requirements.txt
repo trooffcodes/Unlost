@@ -4,3 +4,4 @@ python-dotenv
 pillow
 requests
 user_agents
+redis

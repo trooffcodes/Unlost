@@ -17,16 +17,16 @@ class Config:
     # -----------------------------
 
     SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key")
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
     
     GROQ_KEYS = [k for k in [os.getenv("GROQ_API_KEY"), os.getenv("GROQ_API_KEY2")] if k]
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     OCR_SPACE_KEY = os.getenv("OCR_SPACE_KEY")
     LLAMA_CLOUD_API_KEY = os.getenv("LlamaParse")
     
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+    GROQ_MODEL = os.getenv("GROQ_MODEL")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL")
+    GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL")
 
     IS_VERCEL = os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV") is not None
     BASE_DIR = Path("/tmp") if IS_VERCEL else Path(__file__).resolve().parent

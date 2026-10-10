@@ -14,4 +14,4 @@ app = create_app()
 
 if __name__ == "__main__":
     logger.info("Starting local server on http://localhost:5000")
-    app.run(debug=True, threaded=True)
+    app.run(debug=False, threaded=True)

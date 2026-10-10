@@ -273,28 +273,23 @@ def llamaparse(
         status = job.get("status")
 
         if status == "COMPLETED":
-            # FIX: Check for direct string representations first to prevent crashes
-            for key in ("markdown_full", "markdown", "text_full", "text"):
+            # 1. Check direct string fields
+            for key in ("markdown_full", "text_full", "markdown", "text"):
                 val = data.get(key)
                 if isinstance(val, str) and val.strip():
                     return val.strip()
 
-            markdown = data.get("markdown") or {}
-
-            if isinstance(markdown, dict):
-                pages = markdown.get("pages") or []
-            elif isinstance(markdown, list):
-                pages = markdown
-            else:
-                pages = []
-
-            # FIX: Fallback to checking "text" key for pages if markdown is missing them
-            if not pages:
-                text_dict = data.get("text") or {}
-                if isinstance(text_dict, dict):
-                    pages = text_dict.get("pages") or []
-                elif isinstance(text_dict, list):
-                    pages = text_dict
+            # 2. Check for pages array in "markdown" or "text"
+            pages = []
+            for key in ("markdown", "text"):
+                val = data.get(key)
+                if isinstance(val, dict):
+                    pages = val.get("pages") or []
+                elif isinstance(val, list):
+                    pages = val
+                
+                if pages:
+                    break
 
             if not isinstance(pages, list):
                 pages = []
@@ -304,19 +299,19 @@ def llamaparse(
                 if not isinstance(page, dict):
                     continue
 
-                # Check both properties to ensure we don't skip over text data
                 page_text = page.get("markdown") or page.get("text")
-
                 if isinstance(page_text, str) and page_text.strip():
                     parts.append(page_text.strip())
 
             if parts:
                 return "\n\n".join(parts)
 
-            raise RuntimeError(
-                "LlamaParse completed without returning text. "
-                f"Response keys: {list(data.keys())}"
-            )
+            # FIX: If we reach here, LlamaParse completed successfully but the document
+            # was empty or had no extractable text. Instead of crashing and polluting 
+            # the logs with an Exception traceback, return an empty string. 
+            # The calling function `extract_document_text` will handle it natively
+            # and gracefully fall back to local extraction (OCR.Space).
+            return ""
 
         if status in ("FAILED", "CANCELLED"):
             raise RuntimeError(f"LlamaParse {status}: {_error_message(data)}")

@@ -25,6 +25,8 @@ class Config:
     TOKEN_DB_PATH = BASE_DIR / "data" / "token_usage.json"
     TELEMETRY_DB_PATH = BASE_DIR / "data" / "telemetry.json"
     DEBUG_DIR = BASE_DIR / "debug_logs"
+    FEEDBACK_DB_PATH = Path("data/feedback.json")
+    FEEDBACK_DIR = Path("data/feedback_images")
     
     # Constraints
     MAX_FILE_SIZE = 15 * 1024 * 1024       # 15 MB

@@ -4,45 +4,64 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Unlost Admin Shield</title>
-    
-    <!-- Web Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
-    
-    <!-- Link Unified External CSS via Flask -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="admin-container">
         <header class="admin-header">
-            <h1 class="brand">🛡️ Admin Shield Dashboard</h1>
+            <h1 class="brand">🛡️ Admin Shield</h1>
             <a href="/" class="btn-ghost">Back to Unlost User Panel &rarr;</a>
         </header>
 
-        <section class="module-card">
+        <div class="admin-tabs" id="adminTabs">
+            <button class="admin-tab active" data-target="usersView">Users</button>
+            <button class="admin-tab" data-target="telemetryView">Telemetry</button>
+            <button class="admin-tab" data-target="feedbackView">Feedback</button>
+        </div>
+
+        <!-- Users View -->
+        <section id="usersView" class="module-card admin-section">
             <h2>Device Token Management</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Device Fingerprint (SHA-256)</th>
-                        <th>Used Tokens / Custom Limit</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="userTable">
-                    <tr><td colspan="3">Fetching secure user registries...</td></tr>
-                </tbody>
-            </table>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Device Fingerprint (SHA-256)</th>
+                            <th>Used Tokens / Custom Limit</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTable">
+                        <tr><td colspan="3">Fetching secure user registries...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
-        <section class="module-card">
+        <!-- Telemetry View -->
+        <section id="telemetryView" class="module-card admin-section hidden">
             <h2>Live Telemetry Stream</h2>
             <pre class="log-box" id="logView">Establishing telemetry uplink...</pre>
         </section>
+
+        <!-- Feedback View -->
+        <section id="feedbackView" class="module-card admin-section hidden">
+            <h2>User Feedback Queue</h2>
+            <div class="feedback-grid" id="feedbackContainer">
+                <div style="color: var(--text-muted)">Loading feedback...</div>
+            </div>
+        </section>
     </div>
 
-    <!-- Link External Admin JS via Flask -->
+    <!-- Image Lightbox -->
+    <div id="lightbox" class="lightbox hidden" onclick="AdminApp.closeLightbox()">
+        <button class="lightbox-close">✕</button>
+        <img id="lightboxImg" src="" alt="Full Screen Feedback">
+    </div>
+
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
 </body>
 </html>

@@ -3,3 +3,4 @@ filetype
 python-dotenv
 pillow
 requests
+user_agents

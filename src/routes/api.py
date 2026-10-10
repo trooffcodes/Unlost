@@ -2,13 +2,13 @@ import hashlib
 import shutil
 import uuid
 from pathlib import Path
-from flask import Blueprint, jsonify, request, render_template, Response
+from flask import Blueprint, jsonify, request, render_template, Response, send_from_directory
 from functools import wraps
 from werkzeug.utils import secure_filename
 
 from config import Config
 from utils.logger import logger
-from utils.telemetry import log_telemetry
+from utils.telemetry import log_telemetry, log_feedback, get_request_metadata
 from services.ai import generate_embedding
 from services.vector_store import search_store, clear_user_data, get_user_files
 from services.pipeline import queue_processing_batch, get_job_status
@@ -112,10 +112,42 @@ def search_documents():
 @api_bp.route("/feedback", methods=["POST"])
 def submit_feedback():
     device_id = get_device_id(request)
+    
+    message = request.form.get("message", "").strip()
+    image_file = request.files.get("image")
+    
+    # Extract client metadata sent from the frontend
+    client_data = {
+        "resolution": request.form.get("resolution"),
+        "time_on_page": request.form.get("time_on_page"),
+        "current_url": request.form.get("current_url")
+    }
+    metadata = get_request_metadata(request, client_data)
+    
+    image_filename = None
+    if image_file and image_file.filename:
+        image_filename = make_safe_filename(image_file.filename)
+        Config.FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
+        image_path = Config.FEEDBACK_DIR / image_filename
+        image_file.save(image_path)
+    
+    if message or image_filename:
+        log_feedback(device_id, message, image_filename, metadata)
+        
+    return jsonify({"success": True, "message": "Feedback submitted successfully"})
+
+@api_bp.route("/telemetry/event", methods=["POST"])
+def log_client_event():
+    device_id = get_device_id(request)
     data = request.json or {}
-    message = data.get("message", "").strip()
-    if message:
-        log_telemetry("feedback", device_id, {"message": message})
+    
+    event_type = data.get("event", "page_view")
+    details = data.get("details", {})
+    client_data = data.get("client_data", {})
+    
+    metadata = get_request_metadata(request, client_data)
+    log_telemetry(event_type, device_id, details, metadata)
+    
     return jsonify({"success": True})
 
 # --- ADMIN ROUTES ---
@@ -137,6 +169,8 @@ def admin_page():
 @requires_admin
 def admin_data():
     telemetry = []
+    feedback = []
+    
     if Config.TELEMETRY_DB_PATH.exists():
         try:
             import json
@@ -144,12 +178,27 @@ def admin_data():
                 telemetry = json.load(f)
         except Exception:
             pass
+            
+    if hasattr(Config, 'FEEDBACK_DB_PATH') and Config.FEEDBACK_DB_PATH.exists():
+        try:
+            import json
+            with open(Config.FEEDBACK_DB_PATH, "r", encoding="utf-8") as f:
+                feedback = json.load(f)
+        except Exception:
+            pass
 
     return jsonify({
         "success": True,
         "users": user_token_manager.get_all_users(),
-        "telemetry": telemetry[-50:][::-1]
+        "telemetry": telemetry[-50:][::-1],
+        "feedback": feedback[::-1] # Send newest feedback first
     })
+
+@api_bp.route("/admin/feedback/image/<filename>")
+@requires_admin
+def serve_feedback_image(filename):
+    return send_from_directory(Config.FEEDBACK_DIR, filename)
+
 
 @api_bp.route("/admin/api/user", methods=["POST"])
 @requires_admin

@@ -2,46 +2,67 @@ import json
 import math
 import threading
 from typing import List, Dict, Any
-from config import Config
+from config import Config, kv_db
 from utils.logger import logger
 
 db_lock = threading.Lock()
 
-def _load_db() -> List[Dict[str, Any]]:
+def _load_user_db(user_id: str) -> List[Dict[str, Any]]:
+    if kv_db:
+        try:
+            data = kv_db.get(f"vector_db:{user_id}")
+            return json.loads(data) if data else []
+        except Exception as e:
+            logger.error(f"KV Load Error: {e}")
+            return []
+
     if Config.DB_PATH.exists():
         try:
             with open(Config.DB_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+                db = json.load(f)
+                return [doc for doc in db if doc.get("user_id") == user_id]
         except Exception as e:
-            logger.error(f"Failed to load vector DB: {e}")
+            logger.error(f"DB Load Error: {e}")
     return []
 
-def _save_db(db: List[Dict[str, Any]]):
-    try:
-        with open(Config.DB_PATH, "w", encoding="utf-8") as f:
-            json.dump(db, f, indent=2)
-    except Exception as e:
-        logger.error(f"Failed to persist vector DB: {e}")
+def _save_user_db(user_id: str, user_db: List[Dict[str, Any]]):
+    if kv_db:
+        try:
+            kv_db.set(f"vector_db:{user_id}", json.dumps(user_db))
+            return
+        except Exception as e:
+            logger.error(f"KV Save Error: {e}")
+
+    with db_lock:
+        db = []
+        if Config.DB_PATH.exists():
+            try:
+                with open(Config.DB_PATH, "r", encoding="utf-8") as f:
+                    db = json.load(f)
+            except Exception:
+                pass
+        db = [doc for doc in db if doc.get("user_id") != user_id]
+        db.extend(user_db)
+        try:
+            with open(Config.DB_PATH, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=2)
+        except Exception as e:
+            logger.error(f"DB Save Error: {e}")
 
 def add_to_store(user_id: str, filename: str, file_path: str, metadata: dict, embedding: List[float]):
-    """Safely adds or updates document entries in the thread-safe JSON datastore."""
-    with db_lock:
-        db = _load_db()
-        db = [doc for doc in db if not (doc.get("user_id") == user_id and doc.get("filename") == filename)]
-        db.append({
-            "user_id": user_id,
-            "filename": filename,
-            "file_path": file_path,
-            "metadata": metadata or {},
-            "embedding": embedding or []
-        })
-        _save_db(db)
+    db = _load_user_db(user_id)
+    db = [doc for doc in db if doc.get("filename") != filename]
+    db.append({
+        "user_id": user_id,
+        "filename": filename,
+        "file_path": file_path,
+        "metadata": metadata or {},
+        "embedding": embedding or []
+    })
+    _save_user_db(user_id, db)
 
 def get_user_files(user_id: str) -> List[Dict[str, Any]]:
-    """Retrieves all indexed user files, excluding vector embeddings to optimize bandwidth."""
-    with db_lock:
-        db = _load_db()
-
+    db = _load_user_db(user_id)
     return [
         {
             "filename": doc["filename"],
@@ -52,7 +73,7 @@ def get_user_files(user_id: str) -> List[Dict[str, Any]]:
             "date": doc.get("metadata", {}).get("date", "Unknown"),
             "document_type": doc.get("metadata", {}).get("document_type", "Document")
         }
-        for doc in db if doc.get("user_id") == user_id
+        for doc in db
     ]
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
@@ -67,52 +88,50 @@ def search_store(user_id: str, query_embedding: List[float], top_k: int = 10) ->
     if not query_embedding:
         return []
 
-    with db_lock:
-        db = _load_db()
-
+    db = _load_user_db(user_id)
     results = []
-    
-    # --- CALIBRATED FOR GEMINI-EMBEDDING-001 ---
-    # Unrelated documents usually score around 0.45 to 0.50
-    # Highly related documents (especially short queries vs long text) score around 0.65 to 0.70
+
     MIN_BASELINE = 0.48
     MAX_BASELINE = 0.68
-    
+
     for doc in db:
-        if doc.get("user_id") != user_id:
-            continue
         doc_emb = doc.get("embedding", [])
         if not doc_emb:
             continue
 
         raw_sim = cosine_similarity(query_embedding, doc_emb)
-        
-        # Scale the score to a 0.0 - 1.0 (0% to 100%) format
         normalized_sim = (raw_sim - MIN_BASELINE) / (MAX_BASELINE - MIN_BASELINE)
-        
-        # Clamp bounds strictly so it never goes below 0% or above 100%
         normalized_sim = max(0.0, min(1.0, normalized_sim))
+        normalized_sim = math.pow(normalized_sim, 0.75)
 
-        # Optional: Add a slight curve so decent matches get pushed higher
-        # This increases the "confidence" visually for the user
-        normalized_sim = math.pow(normalized_sim, 0.75) 
-
-        # Only return results that have at least some relevance (e.g., > 10%)
         if normalized_sim > 0.10:
             results.append({
-                "similarity": round(normalized_sim, 4), 
+                "similarity": round(normalized_sim, 4),
                 "filename": doc["filename"],
                 "file_path": doc.get("file_path", ""),
                 "metadata": doc.get("metadata", {})
             })
 
-    # Sort from highest % to lowest %
     results.sort(key=lambda x: x["similarity"], reverse=True)
     return results[:top_k]
 
 def clear_user_data(user_id: str):
+    if kv_db:
+        kv_db.delete(f"vector_db:{user_id}")
+        return
+
     with db_lock:
-        db = _load_db()
+        db = []
+        if Config.DB_PATH.exists():
+            try:
+                with open(Config.DB_PATH, "r", encoding="utf-8") as f:
+                    db = json.load(f)
+            except Exception:
+                pass
         filtered = [doc for doc in db if doc.get("user_id") != user_id]
         if len(filtered) != len(db):
-            _save_db(filtered)
+            try:
+                with open(Config.DB_PATH, "w", encoding="utf-8") as f:
+                    json.dump(filtered, f, indent=2)
+            except Exception:
+                pass

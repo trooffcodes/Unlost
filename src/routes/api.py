@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, render_template, Response, send_f
 from functools import wraps
 from werkzeug.utils import secure_filename
 
-from config import Config
+from config import Config, kv_db
 from utils.logger import logger
 from utils.telemetry import log_telemetry, log_feedback, get_request_metadata
 from services.ai import generate_embedding
@@ -18,18 +18,16 @@ from services.token_manager import user_token_manager
 api_bp = Blueprint("api", __name__)
 
 def get_device_id(req) -> str:
-    # 1. Use the secure cookie primarily so mobile IPs bouncing around don't alter ID
     if "device_id" in req.cookies:
         return req.cookies["device_id"]
         
-    # 2. Fallback to IP+UA for the immediate initialization
     ip = req.headers.get("X-Forwarded-For", req.remote_addr) or "localhost"
+    ip = ip.split(',')[0].strip() # Fix for proxy arrays
     ua = req.headers.get("User-Agent", "generic_client")
     return hashlib.sha256(f"{ip}_{ua}".encode("utf-8")).hexdigest()[:16]
 
 @api_bp.after_request
 def set_device_cookie(response):
-    # Set a persistent 10-year device ID lock in the client's browser
     if not request.cookies.get("device_id"):
         device_id = get_device_id(request)
         response.set_cookie(
@@ -133,7 +131,6 @@ def search_documents():
 @api_bp.route("/feedback", methods=["POST"])
 def submit_feedback():
     device_id = get_device_id(request)
-    
     message = request.form.get("message", "").strip()
     image_file = request.files.get("image")
     
@@ -146,7 +143,6 @@ def submit_feedback():
     
     image_data = None
     if image_file and image_file.filename:
-        # VERCEL PROOF: Encode image payload to Base64 to bypass Vercel Ephemeral File System deletion
         img_bytes = image_file.read()
         b64_encoded = base64.b64encode(img_bytes).decode('utf-8')
         mime_type = image_file.mimetype or "image/png"
@@ -193,19 +189,16 @@ def admin_data():
     telemetry = []
     feedback = []
     
-    # Check for Vercel KV Database Persistence Mode First
-    from utils.telemetry import db
-    if db:
+    if kv_db:
         try:
-            telemetry_raw = db.lrange("telemetry_logs", 0, 49)
+            telemetry_raw = kv_db.lrange("telemetry_logs", 0, 49)
             telemetry = [json.loads(t) for t in telemetry_raw]
             
-            feedback_raw = db.lrange("feedback_logs", 0, -1)
+            feedback_raw = kv_db.lrange("feedback_logs", 0, -1)
             feedback = [json.loads(f) for f in feedback_raw]
         except Exception as e:
             logger.error(f"Vercel KV Load Error: {e}")
     else:
-        # Fallback to unreliable Local Drive format if Redis unconfigured
         if Config.TELEMETRY_DB_PATH.exists():
             try:
                 with open(Config.TELEMETRY_DB_PATH, "r", encoding="utf-8") as f:
@@ -213,7 +206,7 @@ def admin_data():
             except Exception:
                 pass
                 
-        if hasattr(Config, 'FEEDBACK_DB_PATH') and Config.FEEDBACK_DB_PATH.exists():
+        if Config.FEEDBACK_DB_PATH.exists():
             try:
                 with open(Config.FEEDBACK_DB_PATH, "r", encoding="utf-8") as f:
                     feedback = json.load(f)[::-1] 

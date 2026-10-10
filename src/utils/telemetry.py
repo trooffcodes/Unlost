@@ -2,25 +2,17 @@ import json
 import time
 import threading
 import uuid
-import os
-from config import Config
+from config import Config, kv_db
 from user_agents import parse
-import redis
 from utils.logger import logger
-
-# Bind specifically for Vercel persistence using Redis KV
-redis_url = os.environ.get("KV_URL") or os.environ.get("REDIS_URL")
-db = redis.Redis.from_url(redis_url, decode_responses=True) if redis_url else None
 
 telemetry_lock = threading.Lock()
 feedback_lock = threading.Lock()
 
 def log_telemetry(event_type: str, device_id: str, details: dict = None, metadata: dict = None):
-    if details is None:
-        details = {}
-    if metadata is None:
-        metadata = {}
-        
+    if details is None: details = {}
+    if metadata is None: metadata = {}
+
     entry = {
         "timestamp": time.time(),
         "event": event_type,
@@ -28,72 +20,64 @@ def log_telemetry(event_type: str, device_id: str, details: dict = None, metadat
         "details": details,
         "metadata": metadata
     }
-    
     logger.info(f"TELEMETRY [{event_type}] | Device: {device_id} | Details: {details}")
-    
+
     try:
-        # Save securely via KV
-        if db:
-            db.lpush("telemetry_logs", json.dumps(entry))
-            db.ltrim("telemetry_logs", 0, 999) # Rotate & Keep 1000 items safe 
+        if kv_db:
+            kv_db.lpush("telemetry_logs", json.dumps(entry))
+            kv_db.ltrim("telemetry_logs", 0, 999)
         else:
             with telemetry_lock:
                 logs = []
                 if Config.TELEMETRY_DB_PATH.exists():
                     with open(Config.TELEMETRY_DB_PATH, "r", encoding="utf-8") as f:
                         logs = json.load(f)
-                        
                 logs.append(entry)
-                
                 with open(Config.TELEMETRY_DB_PATH, "w", encoding="utf-8") as f:
-                    json.dump(logs[-1000:], f, indent=2) 
+                    json.dump(logs[-1000:], f, indent=2)
     except Exception as e:
         logger.error(f"Failed to log telemetry: {e}")
 
 def log_feedback(device_id: str, message: str, image_data: str = None, metadata: dict = None):
-    if metadata is None:
-        metadata = {}
-        
+    if metadata is None: metadata = {}
+
     entry = {
         "id": uuid.uuid4().hex[:8],
         "timestamp": time.time(),
         "device_id": device_id,
         "message": message,
-        "image_data": image_data, # Retain physical base64 string
+        "image_data": image_data,
         "status": "new",
         "metadata": metadata
     }
-    
-    logger.info(f"FEEDBACK | Device: {device_id} | Msg: {message} | Metadata: {metadata}")
-    
+    logger.info(f"FEEDBACK | Device: {device_id} | Msg: {message[:20]}... | Meta: {metadata}")
+
     try:
-        if db:
-            db.lpush("feedback_logs", json.dumps(entry))
-            db.ltrim("feedback_logs", 0, 499) 
+        if kv_db:
+            kv_db.lpush("feedback_logs", json.dumps(entry))
+            kv_db.ltrim("feedback_logs", 0, 499)
         else:
             with feedback_lock:
                 feedbacks = []
                 if Config.FEEDBACK_DB_PATH.exists():
                     with open(Config.FEEDBACK_DB_PATH, "r", encoding="utf-8") as f:
                         feedbacks = json.load(f)
-                        
                 feedbacks.append(entry)
-                
                 with open(Config.FEEDBACK_DB_PATH, "w", encoding="utf-8") as f:
-                    json.dump(feedbacks[-500:], f, indent=2) 
+                    json.dump(feedbacks[-500:], f, indent=2)
     except Exception as e:
         logger.error(f"Failed to log feedback: {e}")
 
 def get_request_metadata(req, client_data: dict = None) -> dict:
-    if client_data is None:
-        client_data = {}
-        
+    if client_data is None: client_data = {}
+
     ip_address = req.headers.get("X-Forwarded-For", req.remote_addr) or "localhost"
+    ip_address = ip_address.split(',')[0].strip() # Isolate real IP
     ua_string = req.headers.get("User-Agent", "generic_client")
-    
+
     user_agent = parse(ua_string)
     device_type = "Mobile" if user_agent.is_mobile else "Tablet" if user_agent.is_tablet else "PC"
-    
+
     return {
         "ip_address": ip_address,
         "os": f"{user_agent.os.family} {user_agent.os.version_string}",

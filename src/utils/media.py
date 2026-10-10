@@ -34,14 +34,19 @@ def compress_for_ocr(file_bytes: bytes, suffix: str, max_bytes: int = 1_000_000)
 
 @time_it
 def compress_for_llm(file_bytes: bytes, suffix: str, max_dimension: int = 1024) -> bytes:
-    """Reduces resolution to minimize visual tokens while preserving document layout."""
     if suffix.lower() == ".pdf":
         return file_bytes
         
     try:
         img = Image.open(io.BytesIO(file_bytes))
+        # CRITICAL FIX: Safe conversion handling prior to LA fallback processing
         if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'RGBA' or img.mode == 'LA':
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            else:
+                img = img.convert("RGB")
 
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
         out_io = io.BytesIO()

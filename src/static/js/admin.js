@@ -47,9 +47,9 @@ const AdminApp = (() => {
             const firstSeen = meta.created_at || u.created_at || meta.first_seen || u.first_seen;
             let activeStr = 'N/A';
             if (firstSeen) {
-                // Handle both second and millisecond unix timestamps natively
                 const firstSeenMs = firstSeen > 1000000000000 ? firstSeen : firstSeen * 1000;
-                const diffMs = Date.now() - firstSeenMs;
+                // BUX FIX: Math.max ensures minutes never slip into negative offset on desync
+                const diffMs = Math.max(0, Date.now() - firstSeenMs);
                 const diffDays = Math.floor(diffMs / 86400000);
                 const diffHours = Math.floor((diffMs % 86400000) / 3600000);
                 const diffMins = Math.floor((diffMs % 3600000) / 60000);

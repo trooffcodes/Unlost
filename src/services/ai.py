@@ -67,10 +67,10 @@ class GroqTokenManager:
             self.usage.setdefault(key, []).append((time.time(), tokens))
 
     def penalize_key(self, key: str):
-        if not key:
-            return
-        with self.lock:
-            self.usage.setdefault(key, []).append((time.time(), self.max_tpm))
+            if not key:
+                return
+            with self.lock:
+                self.usage.setdefault(key, []).append((time.time(), self.max_tpm))
 
 groq_manager = GroqTokenManager(Config.GROQ_KEYS)
 
@@ -94,26 +94,25 @@ def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
     }
 
     for _ in range(max(1, len(groq_manager.keys))):
-        key = groq_manager.get_key()
-        if not key:
-            break
-        try:
-            res = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json=payload,
-                timeout=25
-            )
-            res.raise_for_status()
-            data = res.json()
-            tokens = data.get("usage", {}).get("total_tokens", 1000)
-            groq_manager.record_usage(key, tokens)
-            return json.loads(_clean_json_markdown(data["choices"][0]["message"]["content"]))
-        except Exception as e:
-            logger.warning(f"Groq API error on key ending in ...{key[-4:]}: {e}")
-            groq_manager.penalize_key(key)
+            key = groq_manager.get_key()
+            if not key: break
+            try:
+                res = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=25
+                )
+                res.raise_for_status()
+                data = res.json()
+                tokens = data.get("usage", {}).get("total_tokens", 1000)
+                groq_manager.record_usage(key, tokens)
+                return json.loads(_clean_json_markdown(data["choices"][0]["message"]["content"]))
+            except Exception as e:
+                logger.warning(f"Groq API error on key ending in ...{key[-4:] if len(key) > 4 else '***'}: {e}")
+                groq_manager.penalize_key(key)
+        raise RuntimeError("All Groq keys unavailable or exhausted.")
 
-    raise RuntimeError("All Groq keys unavailable or exhausted.")
 
 def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     if not Config.GEMINI_API_KEY:

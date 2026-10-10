@@ -3,7 +3,6 @@ import time
 import base64
 import mimetypes
 import threading
-import hashlib
 import re
 import requests
 from typing import Dict, Any, List
@@ -82,19 +81,6 @@ def _clean_json_markdown(text: str) -> str:
         cleaned = re.sub(r"\n?```$", "", cleaned)
     return cleaned.strip()
 
-def _fallback_pseudo_embedding(text: str, dim: int = 64) -> List[float]:
-    """Provides a deterministic vector if third-party embedding services are unavailable."""
-    vector = [0.0] * dim
-    words = re.findall(r"\w+", text.lower())
-    if not words:
-        return vector
-    for word in words:
-        h = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16)
-        idx = h % dim
-        vector[idx] += 1.0
-    norm = sum(x * x for x in vector) ** 0.5
-    return [round(x / norm, 5) for x in vector] if norm > 0 else vector
-
 def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
     trimmed_text = ocr_text[:12000]
     payload = {
@@ -157,29 +143,30 @@ def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
 @time_it
 def generate_embedding(text: str) -> List[float]:
-    """Generates standard dense embeddings using Google Gemini with an automatic deterministic fallback."""
+    """Generates standard dense embeddings using Google Gemini."""
     if not text:
         return []
 
     clean_text = text[:8000].strip()
-    if Config.GEMINI_API_KEY:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_EMBEDDING_MODEL}:embedContent?key={Config.GEMINI_API_KEY}"
-        payload = {
-            "model": f"models/{Config.GEMINI_EMBEDDING_MODEL}",
-            "content": {"parts": [{"text": clean_text}]}
-        }
-        try:
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-            if res.status_code == 200:
-                values = res.json().get("embedding", {}).get("values", [])
-                if values:
-                    return values
-            logger.warning(f"Gemini embedding endpoint returned HTTP {res.status_code}: {res.text}")
-        except Exception as e:
-            logger.error(f"Gemini embedding request failure: {e}")
+    if not Config.GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured.")
 
-    # Fallback guarantees downstream search functionality remains operational
-    return _fallback_pseudo_embedding(clean_text)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_EMBEDDING_MODEL}:embedContent?key={Config.GEMINI_API_KEY}"
+    payload = {
+        "model": f"models/{Config.GEMINI_EMBEDDING_MODEL}",
+        "content": {"parts": [{"text": clean_text}]}
+    }
+    
+    # We remove the silent try/except block. If rate limited, it needs to throw an error 
+    # so we don't accidentally save empty vectors to the database.
+    res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+    res.raise_for_status() 
+    
+    values = res.json().get("embedding", {}).get("values", [])
+    if values:
+        return values
+        
+    raise ValueError("Gemini API returned success but empty embedding values.")
 
 @time_it
 def extract_semantic_metadata(file_bytes: bytes, filename: str, text_content: str) -> Dict[str, Any]:

@@ -71,6 +71,13 @@ def search_store(user_id: str, query_embedding: List[float], top_k: int = 10) ->
         db = _load_db()
 
     results = []
+    
+    # --- CALIBRATED FOR GEMINI-EMBEDDING-001 ---
+    # Unrelated documents usually score around 0.45 to 0.50
+    # Highly related documents (especially short queries vs long text) score around 0.65 to 0.70
+    MIN_BASELINE = 0.48
+    MAX_BASELINE = 0.68
+    
     for doc in db:
         if doc.get("user_id") != user_id:
             continue
@@ -78,15 +85,28 @@ def search_store(user_id: str, query_embedding: List[float], top_k: int = 10) ->
         if not doc_emb:
             continue
 
-        sim = cosine_similarity(query_embedding, doc_emb)
-        if sim > 0.25:
+        raw_sim = cosine_similarity(query_embedding, doc_emb)
+        
+        # Scale the score to a 0.0 - 1.0 (0% to 100%) format
+        normalized_sim = (raw_sim - MIN_BASELINE) / (MAX_BASELINE - MIN_BASELINE)
+        
+        # Clamp bounds strictly so it never goes below 0% or above 100%
+        normalized_sim = max(0.0, min(1.0, normalized_sim))
+
+        # Optional: Add a slight curve so decent matches get pushed higher
+        # This increases the "confidence" visually for the user
+        normalized_sim = math.pow(normalized_sim, 0.75) 
+
+        # Only return results that have at least some relevance (e.g., > 10%)
+        if normalized_sim > 0.10:
             results.append({
-                "similarity": round(sim, 4),
+                "similarity": round(normalized_sim, 4), 
                 "filename": doc["filename"],
                 "file_path": doc.get("file_path", ""),
                 "metadata": doc.get("metadata", {})
             })
 
+    # Sort from highest % to lowest %
     results.sort(key=lambda x: x["similarity"], reverse=True)
     return results[:top_k]
 

@@ -3,87 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universal Document Brain</title>
+    <title>Unlost - Dump any file, we organize the chaos.</title>
+    <!-- Web Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Link External CSS via Flask -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🧠 Universal Document Brain</h1>
-            <p class="subtitle">Multimodal Ingestion, Categorization & Semantic Memory</p>
-        </header>
 
-        <!-- Ingestion Module -->
-        <section class="module-card">
-            <h2>📥 Document Ingestion</h2>
-            <form id="uploadForm">
-                <label class="drop-zone" id="dropZone">
-                    <span id="dropText">Drag & drop files or ZIP archive here (Images, PDFs, Text, Code)</span>
-                    <input type="file" name="files" id="fileInput" multiple required>
-                </label>
-                <button type="submit" id="uploadBtn" class="primary-btn">Ingest Documents</button>
-            </form>
-            <div id="uploadStatus"></div>
-        </section>
-
-        <!-- Dual-Tab Brain Library (Architecture Section 4) -->
-        <section class="module-card">
-            <div class="library-header">
-                <h2>📚 Brain Library</h2>
-                <button id="refreshLibraryBtn" class="secondary-btn">↻ Refresh</button>
-            </div>
-
-            <div class="tabs">
-                <button class="tab-btn active" id="tabUnorganized">Flat View (All Files)</button>
-                <button class="tab-btn" id="tabOrganized">AI Organized Folders</button>
-            </div>
-
-            <div id="viewUnorganized" class="tab-content active">
-                <p class="loading-text">Loading library...</p>
-            </div>
-
-            <div id="viewOrganized" class="tab-content" style="display: none;">
-                <p class="loading-text">Loading folders...</p>
-            </div>
-        </section>
-
-        <!-- Semantic Search Module -->
-        <section class="module-card">
-            <h2>🔍 Semantic Deep Search</h2>
-            <div class="search-bar">
-                <input type="text" id="searchInput" placeholder="Search by intent, contents, meaning, or tags...">
-                <button id="searchBtn" class="primary-btn">Search</button>
-            </div>
-            <div id="searchResults"></div>
-        </section>
-
-        <!-- Usage & Health -->
-        <section class="module-card">
-            <h2>⚡ Device Usage & Storage</h2>
-            <div class="usage-container">
-                <div class="usage-stats">
-                    <strong>Token Quota:</strong> <span id="usageText">Calculating...</span>
+    <header>
+        <div class="brand">Unlost</div>
+        <div class="header-controls">
+            <div class="usage-meter" title="Token quota for this device. Resets every 48 hours.">
+                <span>Usage</span>
+                <div class="meter-bar-bg">
+                    <div class="meter-bar-fill" id="meterFill"></div>
                 </div>
-                <div class="progress-bar-bg">
-                    <div id="usageBar" class="progress-bar-fill"></div>
-                </div>
-                <p class="footnote">Usage limit resets automatically every 48 hours.</p>
+                <span id="meterText">0%</span>
             </div>
+            <button class="btn-ghost btn-danger-ghost" onclick="window.App.clearData()">Clear Data</button>
+        </div>
+    </header>
 
-            <div class="action-row">
-                <button id="clearDataBtn" class="danger-btn">🗑️ Purge Local Storage</button>
-            </div>
-
-            <hr class="divider">
-
-            <form id="feedbackForm">
-                <textarea id="feedbackText" rows="2" placeholder="Feedback or issue reports..." required></textarea>
-                <button type="submit" id="feedbackBtn" class="secondary-btn">Send Feedback</button>
-                <span id="feedbackStatus"></span>
-            </form>
+    <main>
+        <section class="hero">
+            <h1>Dump your files.<br>We organize the chaos.</h1>
+            <p>Your secure, intelligent staging ground. Just throw your files or archives below and let AI securely sort, extract, and make everything instantly searchable.</p>
         </section>
+
+        <section class="dropzone-container">
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+                <div class="dropzone-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <h3>Click to upload or drag and drop</h3>
+                <p>Supports Images, PDFs, Text, Code, CSVs and more (Max 15MB each, up to 50 files).</p>
+                <div class="dropzone-zip-note">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V3h7"/><path d="M21 8h-6V2"/></svg>
+                    <span>Got a .zip? Drop it and we'll extract it automatically.</span>
+                </div>
+                <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf,.txt,.md,.csv,.json,.py,.js,.html,.css,.java,.cpp,.yml,.yaml,.zip">
+            </div>
+        </section>
+
+        <section class="product-area">
+            <div class="search-container">
+                <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="searchInput" class="search-input" placeholder="Semantic search... e.g., 'Where did we outline the serverless migration strategy?'">
+            </div>
+
+            <div class="tabs" id="viewTabs">
+                <button class="tab active" data-target="flatView">Flat View</button>
+                <button class="tab" data-target="aiView">AI Folders</button>
+            </div>
+
+            <div id="flatView" class="grid-container"></div>
+            <div id="aiView" class="grid-container hidden"></div>
+
+            <div id="aiFolderDetailView" class="hidden">
+                <button class="folder-nav-back" onclick="App.closeFolderView()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                    Back to Folders
+                </button>
+                <div class="grid-container" id="folderFilesContainer"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modals & Feedback -->
+    <div class="upload-modal" id="uploadModal">
+        <div class="upload-header">
+            <span>Ingestion Pipeline</span>
+            <span id="uploadPhaseText" style="color: var(--text-muted); font-size: 0.75rem;">Processing...</span>
+        </div>
+        <div class="upload-body" id="uploadList"></div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <footer>
+        <form class="feedback-form" id="feedbackForm">
+            <h4>Tell us how to improve Unlost</h4>
+            <textarea id="feedbackText" placeholder="Found an issue parsing multi-column Japanese invoices? Let a human know..."></textarea>
+            <button type="submit" class="btn-primary">Send Feedback</button>
+        </form>
+    </footer>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Link External JS via Flask -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

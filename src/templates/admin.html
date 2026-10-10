@@ -3,22 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brain Admin Shield</title>
+    <title>Unlost Admin Shield</title>
+    
+    <!-- Web Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Link Unified External CSS via Flask -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <style>
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
-        th { background: #f8f9fa; }
-        .btn { padding: 5px 10px; font-size: 12px; border: none; border-radius: 4px; color: #fff; cursor: pointer; }
-        .bg-red { background: #e74c3c; }
-        .bg-blue { background: #3498db; }
-        pre.log-box { background: #1a1a1a; color: #4af626; padding: 12px; border-radius: 6px; height: 320px; overflow-y: auto; font-family: monospace; font-size: 12px; }
-    </style>
 </head>
 <body>
-    <div class="container" style="max-width: 960px;">
-        <header>
-            <h1>🛡️ Admin Shield Dashboard</h1>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1 class="brand">🛡️ Admin Shield Dashboard</h1>
+            <a href="/" class="btn-ghost">Back to Unlost User Panel &rarr;</a>
         </header>
 
         <section class="module-card">
@@ -26,65 +25,24 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Device Fingerprint</th>
-                        <th>Used / Limit</th>
+                        <th>Device Fingerprint (SHA-256)</th>
+                        <th>Used Tokens / Custom Limit</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="userTable">
-                    <tr><td colspan="3">Fetching user registries...</td></tr>
+                    <tr><td colspan="3">Fetching secure user registries...</td></tr>
                 </tbody>
             </table>
         </section>
 
         <section class="module-card">
             <h2>Live Telemetry Stream</h2>
-            <pre class="log-box" id="logView">Awaiting telemetry logs...</pre>
+            <pre class="log-box" id="logView">Establishing telemetry uplink...</pre>
         </section>
     </div>
 
-    <script>
-        const fetchAdminData = async () => {
-            try {
-                const res = await fetch("/admin/api/data");
-                const data = await res.json();
-
-                document.getElementById("userTable").innerHTML = Object.entries(data.users || {}).map(([id, u]) => `
-                    <tr>
-                        <td><code>${id}</code></td>
-                        <td><strong>${u.used}</strong> / ${u.custom_limit || 20000}</td>
-                        <td>
-                            <button class="btn bg-red" onclick="execAction('${id}', 'reset')">Reset</button>
-                            <button class="btn bg-blue" onclick="setLimit('${id}')">Set Limit</button>
-                        </td>
-                    </tr>
-                `).join("") || "<tr><td colspan='3'>No devices active.</td></tr>";
-
-                document.getElementById("logView").innerHTML = (data.telemetry || []).map(t =>
-                    `[${new Date(t.timestamp * 1000).toLocaleTimeString()}] [${t.device_id}] ${t.event.toUpperCase()} ${JSON.stringify(t.details || {})}`
-                ).join("\n") || "No telemetry captured.";
-            } catch (err) {
-                console.error("Admin data fetch failed", err);
-            }
-        };
-
-        const execAction = async (device_id, action, limit = null) => {
-            if (!confirm(`Confirm action ${action}?`)) return;
-            await fetch("/admin/api/user", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({ device_id, action, limit })
-            });
-            fetchAdminData();
-        };
-
-        const setLimit = (id) => {
-            const limit = prompt("Enter new custom token limit:");
-            if (limit && !isNaN(limit)) execAction(id, "set_limit", parseInt(limit));
-        };
-
-        fetchAdminData();
-        setInterval(fetchAdminData, 8000);
-    </script>
+    <!-- Link External Admin JS via Flask -->
+    <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
 </body>
 </html>

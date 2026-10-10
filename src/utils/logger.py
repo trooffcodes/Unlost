@@ -1,22 +1,29 @@
+import os
 import logging
 import time
 from functools import wraps
+from pathlib import Path
 
-# Setup comprehensive logger
 logger = logging.getLogger("AppLogger")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(threadName)s | %(module)s | %(message)s')
 
-file_handler = logging.FileHandler('app.log')
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
+# Vercel Serverless crashes attempting to write root folder logs. Moving to /tmp safe directory
+IS_VERCEL = os.getenv("VERCEL") == "1" or os.getenv("VERCEL_ENV") is not None
+LOG_FILE = Path("/tmp/app.log") if IS_VERCEL else Path("app.log")
+
+try:
+    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+except Exception:
+    pass
 
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 def time_it(func):
-    """Decorator to measure and log function execution time."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         start = time.perf_counter()

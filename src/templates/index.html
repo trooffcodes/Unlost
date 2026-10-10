@@ -3,36 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Document Processing & Semantic Search</title>
+    <title>Universal Document Brain</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Document Manager UI</h1>
-        
-        <!-- Upload Module -->
-        <div class="module-card">
-            <h2>Process Document</h2>
+        <header>
+            <h1>🧠 Universal Document Brain</h1>
+            <p class="subtitle">Multimodal Ingestion, Categorization & Semantic Memory</p>
+        </header>
+
+        <!-- Ingestion Module -->
+        <section class="module-card">
+            <h2>📥 Document Ingestion</h2>
             <form id="uploadForm">
                 <label class="drop-zone" id="dropZone">
-                    <span id="dropText">Drag & drop a file here, or click to browse</span>
-                    <input type="file" name="file" id="fileInput" required>
+                    <span id="dropText">Drag & drop files or ZIP archive here (Images, PDFs, Text, Code)</span>
+                    <input type="file" name="files" id="fileInput" multiple required>
                 </label>
-                <button type="submit" id="uploadBtn">Upload & Embed Metadata</button>
+                <button type="submit" id="uploadBtn" class="primary-btn">Ingest Documents</button>
             </form>
             <div id="uploadStatus"></div>
-        </div>
+        </section>
+
+        <!-- Dual-Tab Brain Library (Architecture Section 4) -->
+        <section class="module-card">
+            <div class="library-header">
+                <h2>📚 Brain Library</h2>
+                <button id="refreshLibraryBtn" class="secondary-btn">↻ Refresh</button>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" id="tabUnorganized">Flat View (All Files)</button>
+                <button class="tab-btn" id="tabOrganized">AI Organized Folders</button>
+            </div>
+
+            <div id="viewUnorganized" class="tab-content active">
+                <p class="loading-text">Loading library...</p>
+            </div>
+
+            <div id="viewOrganized" class="tab-content" style="display: none;">
+                <p class="loading-text">Loading folders...</p>
+            </div>
+        </section>
 
         <!-- Semantic Search Module -->
-        <div class="module-card">
-            <h2>Semantic Database Search</h2>
+        <section class="module-card">
+            <h2>🔍 Semantic Deep Search</h2>
             <div class="search-bar">
-                <input type="text" id="searchInput" placeholder="E.g., 'Recent medical receipts' or 'Python tutorial PDFs'...">
-                <button id="searchBtn">Search DB</button>
+                <input type="text" id="searchInput" placeholder="Search by intent, contents, meaning, or tags...">
+                <button id="searchBtn" class="primary-btn">Search</button>
             </div>
             <div id="searchResults"></div>
-        </div>
+        </section>
+
+        <!-- Usage & Health -->
+        <section class="module-card">
+            <h2>⚡ Device Usage & Storage</h2>
+            <div class="usage-container">
+                <div class="usage-stats">
+                    <strong>Token Quota:</strong> <span id="usageText">Calculating...</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div id="usageBar" class="progress-bar-fill"></div>
+                </div>
+                <p class="footnote">Usage limit resets automatically every 48 hours.</p>
+            </div>
+
+            <div class="action-row">
+                <button id="clearDataBtn" class="danger-btn">🗑️ Purge Local Storage</button>
+            </div>
+
+            <hr class="divider">
+
+            <form id="feedbackForm">
+                <textarea id="feedbackText" rows="2" placeholder="Feedback or issue reports..." required></textarea>
+                <button type="submit" id="feedbackBtn" class="secondary-btn">Send Feedback</button>
+                <span id="feedbackStatus"></span>
+            </form>
+        </section>
     </div>
+
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

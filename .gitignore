@@ -8,13 +8,13 @@ __pycache__/
 
 src/uploads/
 /tests/
-
+pr
 # Ignore test files and databases
 *.pdf
 *.png
 *.db
 Steps.txt
 Next.txt
-
+test.py
 # Ignore secrets
 .env

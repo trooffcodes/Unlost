@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain Admin Shield</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
+        th { background: #f8f9fa; }
+        .btn { padding: 5px 10px; font-size: 12px; border: none; border-radius: 4px; color: #fff; cursor: pointer; }
+        .bg-red { background: #e74c3c; }
+        .bg-blue { background: #3498db; }
+        pre.log-box { background: #1a1a1a; color: #4af626; padding: 12px; border-radius: 6px; height: 320px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 960px;">
+        <header>
+            <h1>🛡️ Admin Shield Dashboard</h1>
+        </header>
+
+        <section class="module-card">
+            <h2>Device Token Management</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Device Fingerprint</th>
+                        <th>Used / Limit</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userTable">
+                    <tr><td colspan="3">Fetching user registries...</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="module-card">
+            <h2>Live Telemetry Stream</h2>
+            <pre class="log-box" id="logView">Awaiting telemetry logs...</pre>
+        </section>
+    </div>
+
+    <script>
+        const fetchAdminData = async () => {
+            try {
+                const res = await fetch("/admin/api/data");
+                const data = await res.json();
+
+                document.getElementById("userTable").innerHTML = Object.entries(data.users || {}).map(([id, u]) => `
+                    <tr>
+                        <td><code>${id}</code></td>
+                        <td><strong>${u.used}</strong> / ${u.custom_limit || 20000}</td>
+                        <td>
+                            <button class="btn bg-red" onclick="execAction('${id}', 'reset')">Reset</button>
+                            <button class="btn bg-blue" onclick="setLimit('${id}')">Set Limit</button>
+                        </td>
+                    </tr>
+                `).join("") || "<tr><td colspan='3'>No devices active.</td></tr>";
+
+                document.getElementById("logView").innerHTML = (data.telemetry || []).map(t =>
+                    `[${new Date(t.timestamp * 1000).toLocaleTimeString()}] [${t.device_id}] ${t.event.toUpperCase()} ${JSON.stringify(t.details || {})}`
+                ).join("\n") || "No telemetry captured.";
+            } catch (err) {
+                console.error("Admin data fetch failed", err);
+            }
+        };
+
+        const execAction = async (device_id, action, limit = null) => {
+            if (!confirm(`Confirm action ${action}?`)) return;
+            await fetch("/admin/api/user", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ device_id, action, limit })
+            });
+            fetchAdminData();
+        };
+
+        const setLimit = (id) => {
+            const limit = prompt("Enter new custom token limit:");
+            if (limit && !isNaN(limit)) execAction(id, "set_limit", parseInt(limit));
+        };
+
+        fetchAdminData();
+        setInterval(fetchAdminData, 8000);
+    </script>
+</body>
+</html>

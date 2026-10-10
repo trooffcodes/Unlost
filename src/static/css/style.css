@@ -109,3 +109,16 @@ pre {
     border-radius: 15px;
     font-size: 12px;
 }
+
+.user-config {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 25px;
+}
+.user-config input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}

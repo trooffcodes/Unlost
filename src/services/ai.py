@@ -3,195 +3,215 @@ import time
 import base64
 import mimetypes
 import threading
+import hashlib
+import re
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, List
+from pathlib import Path
 
 from config import Config
 from utils.logger import logger, time_it
 
-# Prompts
-GROQ_SYSTEM_PROMPT = """You are an expert document metadata extractor. You will receive OCR text.
-First, analyze if the OCR text is sufficient to extract meaningful file metadata.
-If completely insufficient, return EXACTLY: {"sufficient": false}
+GROQ_SYSTEM_PROMPT = """You are an expert document metadata extractor. You will receive OCR/plain text.
+If the text contains insufficient signal to classify the file, return EXACTLY: {"sufficient": false}
 
-If sufficient, return a STRICT JSON object representing the document:
+If sufficient, return a valid JSON object matching this schema:
 {
   "sufficient": true,
-  "document_title": "String - Generated title",
-  "document_type": "String",
-  "suggested_folder": "String",
-  "total_amount": "Number or null",
-  "currency": "String (3 letters) or null",
+  "document_title": "Concise document title",
+  "document_type": "Invoice | Receipt | Source Code | Notes | Documentation | Identity | Other",
+  "suggested_folder": "Categorical folder name (e.g. Finances, Architecture, Notes)",
+  "total_amount": null,
+  "currency": null,
   "date": "YYYY-MM-DD or null",
-  "tags": ["Array", "of", "3-5", "tags"],
-  "summary": "String - Concise 2-sentence summary",
-  "semantic_search_text": "String - Dense block of text for vector DB"
+  "tags": ["tag1", "tag2", "tag3"],
+  "summary": "Concise two-sentence summary.",
+  "semantic_search_text": "Dense keyword and contextual summary string for vector embedding"
 }
-Output nothing but valid JSON."""
+Output valid JSON only with no markdown formatting."""
 
-GEMINI_SYSTEM_PROMPT = """You are a multimodal document metadata extractor.
-Analyze the document visually and return EXACTLY this JSON:
+GEMINI_SYSTEM_PROMPT = """Analyze this document visually and return pure JSON only matching this schema:
 {
-  "document_title": "String",
-  "document_type": "String",
-  "suggested_folder": "String",
-  "total_amount": "Number or null",
-  "currency": "String or null",
+  "document_title": "Concise document title",
+  "document_type": "Invoice | Receipt | Document | Image | Other",
+  "suggested_folder": "Logical folder name",
+  "total_amount": null,
+  "currency": null,
   "date": "YYYY-MM-DD or null",
-  "tags": ["Array", "of", "tags"],
-  "summary": "String",
-  "semantic_search_text": "String"
-}"""
-
+  "tags": ["tag1", "tag2", "tag3"],
+  "summary": "Concise two-sentence summary.",
+  "semantic_search_text": "Dense keyword and contextual summary string for vector embedding"
+}
+Output valid JSON only with no markdown formatting."""
 
 class GroqTokenManager:
-    """Manages rate limits for multiple Groq API keys (8K tokens / min)."""
-    def __init__(self, keys, max_tpm=7800):
-        self.keys = keys
+    def __init__(self, keys: List[str], max_tpm: int = 7500):
+        self.keys = [k for k in keys if k]
         self.max_tpm = max_tpm
         self.lock = threading.Lock()
-        self.usage = {key: [] for key in keys}
+        self.usage = {key: [] for key in self.keys}
 
-    def get_key(self, estimated_tokens=4000):
+    def get_key(self, estimated_tokens: int = 3500) -> str | None:
         with self.lock:
             now = time.time()
             for key in self.keys:
                 self.usage[key] = [(ts, tk) for ts, tk in self.usage[key] if now - ts < 60]
                 current_tokens = sum(tk for ts, tk in self.usage[key])
-                
                 if current_tokens + estimated_tokens < self.max_tpm:
                     return key
-                    
-            return None 
+            return None
 
-    def record_usage(self, key, tokens):
+    def record_usage(self, key: str, tokens: int):
+        if not key:
+            return
         with self.lock:
-            self.usage[key].append((time.time(), tokens))
-            logger.info(f"Groq token usage recorded: {tokens} on key ...{key[-4:]}")
+            self.usage.setdefault(key, []).append((time.time(), tokens))
 
+    def penalize_key(self, key: str):
+        if not key:
+            return
+        with self.lock:
+            self.usage.setdefault(key, []).append((time.time(), self.max_tpm))
 
 groq_manager = GroqTokenManager(Config.GROQ_KEYS)
 
-def _save_debug_output(filename: str, source: str, data: Dict[str, Any]):
-    try:
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        safe_name = filename.replace(" ", "_").split(".")[0]
-        debug_file = Config.DEBUG_DIR / f"{safe_name}_{source}_{timestamp}.json"
-        with open(debug_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        logger.error(f"Failed to save debug for {filename}: {e}")
+def _clean_json_markdown(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\n?", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\n?```$", "", cleaned)
+    return cleaned.strip()
 
-def _is_ocr_insufficient(ocr_text: str) -> bool:
-    if not ocr_text:
-        return True
-    clean_text = ocr_text.strip()
-    if len(clean_text) < 15:
-        return True
-    alnum = sum(c.isalnum() for c in clean_text)
-    return (alnum / max(len(clean_text), 1)) < 0.35
+def _fallback_pseudo_embedding(text: str, dim: int = 64) -> List[float]:
+    """Provides a deterministic vector if third-party embedding services are unavailable."""
+    vector = [0.0] * dim
+    words = re.findall(r"\w+", text.lower())
+    if not words:
+        return vector
+    for word in words:
+        h = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16)
+        idx = h % dim
+        vector[idx] += 1.0
+    norm = sum(x * x for x in vector) ** 0.5
+    return [round(x / norm, 5) for x in vector] if norm > 0 else vector
 
-def _call_groq_qwen(ocr_text: str, filename: str) -> Dict[str, Any]:
-    MAX_CHARS = 14000
-    if len(ocr_text) > MAX_CHARS:
-        logger.warning(f"[{filename}] OCR text truncated to prevent Groq Rate Limit.")
-        ocr_text = ocr_text[:MAX_CHARS]
-
-    api_key = groq_manager.get_key(estimated_tokens=5000)
-    
-    if not api_key:
-        logger.warning(f"[{filename}] All Groq keys rate-limited. Forcing Gemini fallback.")
-        raise ValueError("Groq Rate Limit Reached")
-
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    
+def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
+    trimmed_text = ocr_text[:12000]
     payload = {
         "model": Config.GROQ_MODEL,
         "messages": [
             {"role": "system", "content": GROQ_SYSTEM_PROMPT},
-            {"role": "user", "content": f"OCR TEXT:\n{ocr_text}"} 
+            {"role": "user", "content": f"Filename: {filename}\n\nContent:\n{trimmed_text}"}
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0.1
     }
-    
-    start = time.time()
-    response = requests.post(url, headers=headers, json=payload, timeout=20)
-    response.raise_for_status()
 
-    data = response.json()
-    tokens_used = data.get("usage", {}).get("total_tokens", 0)
-    groq_manager.record_usage(api_key, tokens_used)
-    
-    return json.loads(data["choices"][0]["message"]["content"])
+    for _ in range(max(1, len(groq_manager.keys))):
+        key = groq_manager.get_key()
+        if not key:
+            break
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=25
+            )
+            res.raise_for_status()
+            data = res.json()
+            tokens = data.get("usage", {}).get("total_tokens", 1000)
+            groq_manager.record_usage(key, tokens)
+            return json.loads(_clean_json_markdown(data["choices"][0]["message"]["content"]))
+        except Exception as e:
+            logger.warning(f"Groq API error on key ending in ...{key[-4:]}: {e}")
+            groq_manager.penalize_key(key)
 
+    raise RuntimeError("All Groq keys unavailable or exhausted.")
 
 def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
+    if not Config.GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured.")
+
+    mime_type, _ = mimetypes.guess_type(filename)
+    mime_type = mime_type or ("application/pdf" if filename.lower().endswith(".pdf") else "image/jpeg")
+    b64_data = base64.b64encode(file_bytes).decode("utf-8")
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_MODEL}:generateContent?key={Config.GEMINI_API_KEY}"
-    mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    base64_data = base64.b64encode(file_bytes).decode("utf-8")
-    
     payload = {
         "systemInstruction": {"parts": [{"text": GEMINI_SYSTEM_PROMPT}]},
         "contents": [{
             "role": "user",
             "parts": [
-                {"text": "Analyze this file visually and extract metadata."},
-                {"inlineData": {"mimeType": mime_type, "data": base64_data}}
+                {"text": f"Analyze file '{filename}' and produce structured metadata."},
+                {"inlineData": {"mimeType": mime_type, "data": b64_data}}
             ]
         }],
         "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
     }
-    
-    response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=60)
-    response.raise_for_status()
-    
-    data = response.json()
-    result_text = data["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(result_text)
+
+    res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=45)
+    res.raise_for_status()
+    raw = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return json.loads(_clean_json_markdown(raw))
 
 @time_it
-def generate_embedding(text: str) -> list[float]:
-    """Generates semantic embedding for dense search strings using Gemini."""
+def generate_embedding(text: str) -> List[float]:
+    """Generates standard dense embeddings using Google Gemini with an automatic deterministic fallback."""
     if not text:
         return []
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={Config.GEMINI_API_KEY}"
-    payload = {"content": {"parts": [{"text": text}]}}
-    
-    try:
-        response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
-        response.raise_for_status()
-        return response.json().get("embedding", {}).get("values", [])
-    except Exception as e:
-        logger.error(f"Failed to generate embedding: {e}")
-        return []
+
+    clean_text = text[:8000].strip()
+    if Config.GEMINI_API_KEY:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_EMBEDDING_MODEL}:embedContent?key={Config.GEMINI_API_KEY}"
+        payload = {
+            "model": f"models/{Config.GEMINI_EMBEDDING_MODEL}",
+            "content": {"parts": [{"text": clean_text}]}
+        }
+        try:
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            if res.status_code == 200:
+                values = res.json().get("embedding", {}).get("values", [])
+                if values:
+                    return values
+            logger.warning(f"Gemini embedding endpoint returned HTTP {res.status_code}: {res.text}")
+        except Exception as e:
+            logger.error(f"Gemini embedding request failure: {e}")
+
+    # Fallback guarantees downstream search functionality remains operational
+    return _fallback_pseudo_embedding(clean_text)
 
 @time_it
-def extract_semantic_metadata(file_bytes: bytes, filename: str, ocr_text: str) -> Dict[str, Any]:
+def extract_semantic_metadata(file_bytes: bytes, filename: str, text_content: str) -> Dict[str, Any]:
+    """Attempts fast Groq processing, falls back to Gemini Vision, and defaults to heuristic metadata."""
     default_meta = {
-        "document_title": "Unknown Document", "document_type": "Unknown", "suggested_folder": "Uncategorized",
-        "total_amount": None, "currency": None, "date": None, "tags": [],
-        "summary": "Analysis failed or unavailable.", "semantic_search_text": ""
+        "document_title": filename.rsplit(".", 1)[0].replace("_", " ").title(),
+        "document_type": "Document",
+        "suggested_folder": "General",
+        "total_amount": None,
+        "currency": None,
+        "date": time.strftime("%Y-%m-%d"),
+        "tags": [Path(filename).suffix.lstrip(".").lower()],
+        "summary": text_content[:200] if text_content else "Uploaded file.",
+        "semantic_search_text": f"{filename} {text_content[:1000]}"
     }
-    
-    if not _is_ocr_insufficient(ocr_text):
+
+    if text_content and len(text_content.strip()) >= 20:
         try:
-            qwen_res = _call_groq_qwen(ocr_text, filename)
-            _save_debug_output(filename, "qwen", qwen_res)
-            if qwen_res.get("sufficient") is True:
-                qwen_res.pop("sufficient", None)
-                default_meta.update(qwen_res)
+            groq_res = _call_groq(text_content, filename)
+            if groq_res.get("sufficient") is not False:
+                groq_res.pop("sufficient", None)
+                default_meta.update({k: v for k, v in groq_res.items() if v is not None})
                 return default_meta
         except Exception as e:
-            logger.error(f"[{filename}] Groq AI failed: {e}. Falling back...")
+            logger.info(f"Groq bypassed or failed for {filename}: {e}. Trying Gemini Vision...")
 
-    try:
-        gemini_res = _call_gemini_vision(file_bytes, filename)
-        _save_debug_output(filename, "gemini", gemini_res)
-        default_meta.update(gemini_res)
-    except Exception as e:
-        default_meta["summary"] = f"Extraction failed: {str(e)}"
-        
+    if Config.GEMINI_API_KEY and len(file_bytes) > 0:
+        try:
+            gemini_res = _call_gemini_vision(file_bytes, filename)
+            default_meta.update({k: v for k, v in gemini_res.items() if v is not None})
+            return default_meta
+        except Exception as e:
+            logger.warning(f"Gemini Vision failed for {filename}: {e}")
+
     return default_meta

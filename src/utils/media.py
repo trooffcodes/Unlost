@@ -10,11 +10,11 @@ def compress_for_ocr(file_bytes: bytes, suffix: str, max_bytes: int = 1_000_000)
 
     try:
         img = Image.open(io.BytesIO(file_bytes))
-        img = img.convert("L")  # Grayscale
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        img = img.convert("L")
         
-        contrast_enhancer = ImageEnhance.Contrast(img)
-        img = contrast_enhancer.enhance(1.5)
-        
+        img = ImageEnhance.Contrast(img).enhance(1.5)
         img = img.filter(ImageFilter.SHARPEN)
         
         quality = 95
@@ -25,30 +25,28 @@ def compress_for_ocr(file_bytes: bytes, suffix: str, max_bytes: int = 1_000_000)
             img.save(out_io, format="JPEG", quality=quality)
             if out_io.tell() <= max_bytes or quality <= 10:
                 break
-            quality -= 15 
+            quality -= 15
             
         return out_io.getvalue()
     except Exception as e:
-        logger.warning(f"OCR compression failed, returning original bytes: {e}")
+        logger.warning(f"OCR compression failed: {e}. Returning raw bytes.")
         return file_bytes
 
 @time_it
 def compress_for_llm(file_bytes: bytes, suffix: str, max_dimension: int = 1024) -> bytes:
-    """Reduces resolution to save visual tokens in LLMs without losing layout context."""
+    """Reduces resolution to minimize visual tokens while preserving document layout."""
     if suffix.lower() == ".pdf":
         return file_bytes
         
     try:
         img = Image.open(io.BytesIO(file_bytes))
-        # Resize to max dimensions to drastically reduce token count
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-        
         out_io = io.BytesIO()
         img.save(out_io, format="JPEG", quality=85)
-        optimized_bytes = out_io.getvalue()
-        
-        logger.info(f"LLM Image optimization: reduced from {len(file_bytes)/1024:.1f}KB to {len(optimized_bytes)/1024:.1f}KB")
-        return optimized_bytes
+        return out_io.getvalue()
     except Exception as e:
-        logger.warning(f"LLM compression failed, returning original bytes: {e}")
+        logger.warning(f"LLM image compression failed: {e}. Returning raw bytes.")
         return file_bytes

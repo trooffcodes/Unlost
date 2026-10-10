@@ -1,9 +1,10 @@
 const App = (() => {
+    const { escapeHTML: esc } = window.UnlostSafety;
     // 1. Initialize page load time for metadata tracking
     const loadTime = Date.now(); 
 
     let state = { files: [], searchQuery: "", pollInterval: null, feedbackImageFile: null };
-    const CONFIG = { MAX_FILE_SIZE: 15 * 1024 * 1024, MAX_BATCH_SIZE: 50 };
+    const CONFIG = JSON.parse(document.getElementById("uploadConfig").textContent);
     const ICONS = {
         folder: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
         file: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
@@ -27,10 +28,10 @@ const App = (() => {
 
     const apiFetch = async (endpoint, options = {}) => {
         try {
-            const res = await fetch(endpoint, options);
-            if (res.status === 403) return showToast("Token quota exhausted. Resets in 48h.", true), null;
-            if (res.status === 500) return showToast("Internal Server Error.", true), null;
+            const res = await fetch(endpoint, { ...options, headers: { ...options.headers, "X-Unlost-Request": "1" } });
+            if (res.status === 413) return showToast("Upload exceeds the request size limit.", true), null;
             const data = await res.json();
+            if (!res.ok) return showToast(data.error || `Request failed (${res.status}).`, true), null;
             if (!data.success && data.error) return showToast(data.error, true), null;
             return data;
         } catch (err) { return showToast("Could not connect to Unlost servers.", true), null; }
@@ -45,7 +46,7 @@ const App = (() => {
         
         DOM.dropzone.addEventListener('drop', (e) => processFiles(e.dataTransfer.files));
         DOM.fileInput.addEventListener('change', (e) => { processFiles(e.target.files); DOM.fileInput.value = ''; });
-        DOM.tabs.forEach(t => t.addEventListener('click', (e) => switchTab(e.target.dataset.target)));
+        DOM.tabs.forEach(t => t.addEventListener('click', (e) => switchTab(e.currentTarget.dataset.target)));
 
         let searchDebounceTimer;
         DOM.searchInput.addEventListener('input', (e) => {
@@ -109,6 +110,9 @@ const App = (() => {
     };
 
     const handleImagePreview = (file) => {
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 256 * 1024) {
+            return showToast('Use a PNG, JPEG or WebP screenshot up to 256 KB.', true);
+        }
         state.feedbackImageFile = file;
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -123,7 +127,7 @@ const App = (() => {
     const fetchUsage = async () => {
         const res = await apiFetch('/usage');
         if (res && res.data) {
-            const pct = Math.min((res.data.used / res.data.limit) * 100, 100);
+            const pct = (res.data.limit > 0 ? Math.min((res.data.used / res.data.limit) * 100, 100) : 100);
             DOM.meterFill.style.width = `${pct}%`;
             DOM.meterText.innerText = `${Math.round(pct)}%`;
             DOM.meterFill.style.backgroundColor = pct < 70 ? 'var(--success)' : (pct < 90 ? 'var(--warning)' : 'var(--danger)');
@@ -136,41 +140,47 @@ const App = (() => {
     };
 
     const performSearch = async () => {
+        const query = state.searchQuery;
         const res = await apiFetch('/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: state.searchQuery }) });
-        if (res && res.results) renderSearchResults(res.results);
+        if (res && res.results && query === state.searchQuery) renderSearchResults(res.results);
     };
 
     const processFiles = async (fileList) => {
+        if (state.uploading) return showToast("Please wait for the current upload.", true);
         const files = Array.from(fileList);
         if (!files.length) return;
         if (files.length > CONFIG.MAX_BATCH_SIZE) return showToast(`Max ${CONFIG.MAX_BATCH_SIZE} files allowed.`, true);
-        const formData = new FormData();
-        for (const file of files) {
-            if (file.size > CONFIG.MAX_FILE_SIZE) { showToast(`${file.name} > 15MB. Skipped.`, true); continue; }
-            formData.append('files', file);
+        if (files.some(file => file.size > CONFIG.MAX_FILE_SIZE)) {
+            return showToast(`Each file must be at most ${CONFIG.MAX_FILE_SIZE / 1000000} MB.`, true);
         }
+        state.uploading = true;
+        const statuses = files.map(file => [file.name, 'Queued']);
+        const render = () => { DOM.uploadList.innerHTML = statuses.map(([name, status]) => createUploadItemHTML(name, status)).join(''); };
         DOM.uploadModal.classList.add('show');
-        DOM.uploadList.innerHTML = files.map(f => createUploadItemHTML(f.name, "Queued")).join('');
-        DOM.uploadPhaseText.innerText = "Uploading...";
-        const res = await apiFetch('/upload', { method: 'POST', body: formData });
-        res && res.batch_id ? startPolling(res.batch_id) : DOM.uploadModal.classList.remove('show');
-    };
-
-    const startPolling = (batchId) => {
-        DOM.uploadPhaseText.innerText = "Processing Details...";
-        if (state.pollInterval) clearInterval(state.pollInterval);
-        state.pollInterval = setInterval(async () => {
-            const res = await apiFetch(`/status/${batchId}`);
-            if (res && res.data) {
-                DOM.uploadList.innerHTML = Object.entries(res.data.files).map(([fn, stat]) => createUploadItemHTML(fn, stat)).join('');
-                if (res.data.status === 'completed') {
-                    clearInterval(state.pollInterval);
-                    DOM.uploadPhaseText.innerText = "Completed!";
-                    setTimeout(() => DOM.uploadModal.classList.remove('show'), 4000);
-                    refreshDashboard();
+        DOM.uploadPhaseText.innerText = "Uploading and processing...";
+        render();
+        try {
+            // A request owns its processing lifetime. Send files separately for Vercel's body limit.
+            for (let i = 0; i < files.length; i++) {
+                statuses[i][1] = 'Processing...';
+                render();
+                const formData = new FormData();
+                formData.append('files', files[i]);
+                const res = await apiFetch('/upload', { method: 'POST', body: formData });
+                const status = res && await apiFetch(`/status/${res.batch_id}`);
+                if (status && status.data) {
+                    statuses[i][1] = Object.values(status.data.files).find(value => value.startsWith('ERROR')) || 'DONE';
+                } else {
+                    statuses[i][1] = 'ERROR: Upload failed';
                 }
-            } else { clearInterval(state.pollInterval); }
-        }, 1200);
+                render();
+            }
+            DOM.uploadPhaseText.innerText = statuses.some(([, status]) => status.startsWith('ERROR')) ? 'Finished with errors' : 'Completed!';
+            await refreshDashboard();
+        } finally {
+            state.uploading = false;
+            setTimeout(() => { if (!state.uploading) DOM.uploadModal.classList.remove('show'); }, 5000);
+        }
     };
 
     const switchTab = (targetId) => {
@@ -182,18 +192,18 @@ const App = (() => {
         DOM.aiFolderDetailView.classList.add('hidden');
     };
 
-    const renderViews = () => { if(state.searchQuery.length === 0) { renderFlatView(state.files); renderAIView(state.files); } };
+    const renderViews = () => { if(state.searchQuery.length <= 2) { renderFlatView(state.files); renderAIView(state.files); } };
     const renderFlatView = (arr) => DOM.flatView.innerHTML = arr.length ? arr.map(f => createFileCard(f)).join('') : `<div class="empty-state">No documents ingested yet.</div>`;
     
     const renderAIView = (arr) => {
-        const folders = arr.reduce((acc, f) => { const fn = f.folder || "Unsorted"; acc[fn] = acc[fn] || []; acc[fn].push(f); return acc; }, {});
+        const folders = arr.reduce((acc, f) => { const fn = f.folder || "Unsorted"; acc[fn] = acc[fn] || []; acc[fn].push(f); return acc; }, Object.create(null));
         const keys = Object.keys(folders).sort();
         
         DOM.aiView.innerHTML = keys.length ? keys.map(k => `
-            <div class="folder-card" data-folder="${k}">
+            <div class="folder-card" data-folder="${esc(k)}">
                 ${ICONS.folder}
                 <div class="folder-details">
-                    <h4>${k}</h4>
+                    <h4>${esc(k)}</h4>
                     <p>${folders[k].length} document(s)</p>
                 </div>
                 <div class="folder-open-icon">→</div>
@@ -218,7 +228,7 @@ const App = (() => {
         openFolder: (folderName) => {
             const fFiles = state.files.filter(f => (f.folder || "Unsorted") === folderName);
             DOM.aiView.classList.add('hidden');
-            document.getElementById('currentFolderName').innerText = `📂 ${folderName}`;
+            document.getElementById('currentFolderName').innerText = `📂 ${esc(folderName)}`;
             DOM.aiFolderDetailView.classList.remove('hidden');
             DOM.folderFilesContainer.innerHTML = fFiles.map(f => createFileCard(f)).join('');
         },
@@ -227,9 +237,10 @@ const App = (() => {
             DOM.aiView.classList.remove('hidden'); 
         },
         clearData: async () => {
-            if (confirm("Erase all device files and embeddings? Usage limits remain.")) {
+            if (state.uploading) return showToast("Wait for uploads to finish before clearing data.", true);
+            if (confirm("Erase all document metadata and embeddings? Usage limits remain.")) {
                 const res = await apiFetch('/clear_data', { method: 'POST' });
-                if (res && res.success) { showToast("Storage cleared securely."); state.files = []; renderViews(); }
+                if (res && res.success) { showToast("Storage cleared securely."); state.files = []; state.searchQuery = ""; DOM.searchInput.value = ""; renderViews(); }
             }
         }
     };
@@ -237,10 +248,10 @@ const App = (() => {
     const createFileCard = (data, isSearch = false) => {
         const file = (isSearch && data.metadata) ? data.metadata : data;
         const filename = data.filename || file.document_title || "Unknown File";
-        const tagsHTML = (file.tags || []).map(t => `<span class="tag">#${t}</span>`).join('');
+        const tagsHTML = (Array.isArray(file.tags) ? file.tags : []).map(t => `<span class="tag">#${esc(t)}</span>`).join('');
         const score = (isSearch && data.similarity) ? `<span class="score-badge">${Math.round(data.similarity * 100)}% Match</span>` : "";
-        const folderName = file.folder || data.folder || "Unsorted";
-        const folderInfo = `<div class="folder-pill">📂 Folder: ${folderName}</div>`;
+        const folderName = file.suggested_folder || file.folder || data.folder || "Unsorted";
+        const folderInfo = `<div class="folder-pill">📂 Folder: ${esc(folderName)}</div>`;
         const ext = filename.split('.').pop().toLowerCase();
         const isImage = ['png','jpg','jpeg','webp','bmp'].includes(ext);
         const iconHTML = isImage ? `<div class="file-icon-img">${ICONS.image}</div>` : `<div class="file-icon">${ICONS.file}</div>`;
@@ -251,13 +262,13 @@ const App = (() => {
                     <div class="file-title-wrap">
                         ${iconHTML}
                         <div style="min-width: 0;">
-                            <h4 class="file-name">${filename}</h4>
-                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${file.date || ''} • ${file.document_type || 'File'}</div>
+                            <h4 class="file-name">${esc(filename)}</h4>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${esc(file.date || '')} • ${esc(file.document_type || 'File')}</div>
                             ${folderInfo}
                         </div>
                     </div>
                 </div>
-                <div class="file-summary">${file.summary || "No summary available."}</div>
+                <div class="file-summary">${esc(file.summary || "No summary available.")}</div>
                 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; padding-top: 1rem;">
                     <div class="tags">${tagsHTML}</div>
                     <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end;">${score}</div>
@@ -268,13 +279,13 @@ const App = (() => {
     const createUploadItemHTML = (fname, statStr) => {
         const isError = statStr.startsWith("ERROR");
         const statusClass = isError ? "status-error" : (statStr === "Processing..." ? "status-processing" : (statStr === "DONE" ? "status-done" : "status-queued"));
-        return `<div class="upload-item"><span class="upload-name" title="${fname}">${fname}</span><span class="upload-status ${statusClass}" ${isError ? `title="${statStr}"` : ''}>${isError ? 'ERROR' : statStr}</span></div>`;
+        return `<div class="upload-item"><span class="upload-name" title="${esc(fname)}">${esc(fname)}</span><span class="upload-status ${statusClass}" ${isError ? `title="${esc(statStr)}"` : ''}>${isError ? 'ERROR' : esc(statStr)}</span></div>`;
     };
 
     const showToast = (message, isError = false) => {
         const toast = document.createElement('div');
         toast.className = `toast ${isError ? 'error' : ''}`;
-        toast.innerHTML = `${isError ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>` : ICONS.check} ${message}`;
+        toast.innerHTML = `${isError ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>` : ICONS.check} ${esc(message)}`;
         DOM.toastContainer.appendChild(toast);
         requestAnimationFrame(() => toast.classList.add('show'));
         setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 4000);

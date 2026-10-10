@@ -38,10 +38,10 @@
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 </div>
                 <h3>Click to upload or drag and drop</h3>
-                <p>Supports Images, PDFs, Text, Code, CSVs and more (Max 15MB each, up to 50 files).</p>
+                <p>Supports Images, PDFs, Text, Code, CSVs and more (Max {{ config.MAX_FILE_SIZE / 1000000 }} MB each, up to 50 files, processed one at a time).</p>
                 <div class="dropzone-zip-note">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V3h7"/><path d="M21 8h-6V2"/></svg>
-                    <span>Got a .zip? Drop it and we'll extract it automatically.</span>
+                    <span>ZIP archives may contain up to {{ config.MAX_FILES_PER_BATCH }} supported file(s). Keep your originals; Unlost stores searchable metadata, not file backups.</span>
                 </div>
                 <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf,.txt,.md,.csv,.json,.py,.js,.html,.css,.java,.cpp,.yml,.yaml,.zip">
             </div>
@@ -84,7 +84,7 @@
     <footer>
         <form class="feedback-form" id="feedbackForm">
             <h4>Tell us how to improve Unlost</h4>
-            <textarea id="feedbackText" placeholder="Found an issue? Describe it or paste a screenshot directly here (Ctrl+V)..."></textarea>
+            <textarea maxlength="4000" id="feedbackText" placeholder="Found an issue? Describe it or paste a screenshot directly here (Ctrl+V)..."></textarea>
             
             <div id="imagePreviewContainer" class="image-preview-container hidden">
                 <img id="feedbackImagePreview" src="" alt="Feedback Screenshot">
@@ -106,6 +106,8 @@
     </footer>
 
     <div class="toast-container" id="toastContainer"></div>
+    <script type="application/json" id="uploadConfig">{{ upload_config | tojson }}</script>
+    <script src="{{ url_for('static', filename='js/safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

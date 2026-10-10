@@ -23,27 +23,25 @@ def validate_upload(file_bytes: bytes, filename: str, upload_folder: Path | None
 
     if suffix not in Config.ALLOWED_TEXT_EXT:
         kind = filetype.guess(file_bytes)
-        if not kind or f".{kind.extension}" not in Config.ALLOWED_EXTENSIONS:
-            return "File content does not match allowed types"
+        expected = ".jpg" if suffix == ".jpeg" else suffix
+        if not kind or f".{kind.extension}" != expected:
+            return "File content does not match its extension"
 
     if suffix in Config.ALLOWED_IMAGE_EXT:
         try:
             with Image.open(io.BytesIO(file_bytes)) as img:
+                if img.width * img.height > 20_000_000:
+                    return "Image exceeds 20 megapixels"
                 img.verify()
         except Exception:
             return "File appears to be corrupted"
  
-    target_hash = _get_hash(file_bytes)
-    target_size = len(file_bytes)
-    
-    if upload_folder and upload_folder.exists():
-        for existing in upload_folder.rglob("*"):
-            if existing.is_file():
-                try:
-                    if existing.stat().st_size == target_size:
-                        if _get_hash(existing.read_bytes()) == target_hash:
-                            return f"Duplicate file! Already uploaded as {existing.name}"
-                except Exception:
-                    pass
-
+    if suffix == ".pdf":
+        try:
+            import fitz
+            with fitz.open(stream=file_bytes, filetype="pdf") as document:
+                if document.needs_pass or not 1 <= len(document) <= 100:
+                    return "PDF must be unencrypted and contain 1 to 100 pages"
+        except Exception:
+            return "PDF appears to be corrupted"
     return None

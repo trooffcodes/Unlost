@@ -1,20 +1,11 @@
-# Ignore Python environments
-backend/.venv/
 __pycache__/
-*.pyc
-*.toml
-*.json
+*.py[cod]
 *.log
-
-src/uploads/
-/tests/
-pr
-# Ignore test files and databases
-*.pdf
-*.png
-*.db
-Steps.txt
-Next.txt
-test.py
-# Ignore secrets
+.venv/
 .env
+.env.*
+!.env.example
+.vercel/
+src/data/
+src/debug_logs/
+.pytest_cache/

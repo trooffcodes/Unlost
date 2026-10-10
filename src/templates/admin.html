@@ -28,7 +28,7 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Device Fingerprint (SHA-256)</th>
+                            <th>Device ID</th>
                             <th>Active For</th> <!-- NEW COLUMN -->
                             <th>Used Tokens / Custom Limit</th>
                             <th>Actions</th>
@@ -61,6 +61,7 @@
         <img id="lightboxImg" src="" alt="Full Screen Feedback">
     </div>
 
+    <script src="{{ url_for('static', filename='js/safety.js') }}"></script>
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
 </body>
 </html>

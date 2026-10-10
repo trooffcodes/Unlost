@@ -1,132 +1,79 @@
 import json
 import time
-import threading
 from config import Config, kv_db
-from utils.logger import logger
+from utils.storage import local_lock, read_json, write_json, update_record
+
 
 class UserTokenManager:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.user_usage = self._load_local_usage()
+    def _update(self, device_id, change):
+        initial = {"used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}}
 
-    def _load_local_usage(self) -> dict:
-        if Config.TOKEN_DB_PATH.exists():
-            try:
-                with open(Config.TOKEN_DB_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    for k, v in data.items():
-                        if isinstance(v, int):
-                            data[k] = {"used": v, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}}
-                    return data
-            except Exception as e:
-                logger.error(f"Failed to load token usage: {e}")
-        return {}
+        def apply(record):
+            if time.time() - record.get("first_used", 0) >= 172800:
+                record.update(used=0, first_used=time.time())
+            return change(record)
 
-    def _save_local_usage(self):
-        try:
-            with open(Config.TOKEN_DB_PATH, "w", encoding="utf-8") as f:
-                json.dump(self.user_usage, f, indent=4)
-        except Exception as e:
-            logger.error(f"Failed to persist token usage: {e}")
-
-    def _get_record(self, device_id: str) -> dict:
         if kv_db:
-            val = kv_db.get(f"token_usage:{device_id}")
-            if val:
-                return json.loads(val)
-            return {"used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}}
-        else:
-            return self.user_usage.setdefault(device_id, {
-                "used": 0, "first_used": time.time(), "custom_limit": Config.MAX_USER_TOKENS, "metadata": {}
-            })
+            return update_record(f"token_usage:{device_id}", initial, apply)
+        with local_lock:
+            users = read_json(Config.TOKEN_DB_PATH, {})
+            record = users.setdefault(device_id, initial)
+            if isinstance(record, int):
+                record = users[device_id] = dict(initial, used=record)
+            result = apply(record)
+            write_json(Config.TOKEN_DB_PATH, users)
+            return result
 
-    def _save_record(self, device_id: str, record: dict):
-        if kv_db:
-            kv_db.set(f"token_usage:{device_id}", json.dumps(record))
-        else:
-            self.user_usage[device_id] = record
-            self._save_local_usage()
+    def register_user(self, device_id, metadata):
+        def change(record):
+            if not record.get("metadata"):
+                record["metadata"] = dict(metadata, first_seen=record["first_used"])
+                return True
+            return False
+        if self._update(device_id, change):
+            from utils.webhook import notify_user
+            notify_user(device_id, metadata)
 
-    def register_user(self, device_id: str, metadata: dict):
-            """Forces registration of every visitor so they appear in the Admin Panel."""
-            with self.lock:
-                record = self._get_record(device_id)
-                is_new_user = not record.get("metadata")
-                
-                # Inject metadata if this is their first time or IP is missing
-                if is_new_user or not record["metadata"].get("ip"):
-                    record["metadata"] = {
-                        "ip": metadata.get("ip", "Unknown"),
-                        "os": metadata.get("os", "Unknown OS"),
-                        "browser": metadata.get("browser", "Unknown Browser"),
-                        "first_seen": record.get("first_used", time.time()),
-                        "device_type": metadata.get("device_type", "Unknown"),
-                        "current_url": metadata.get("current_url", "Unknown")
-                    }
-                    self._save_record(device_id, record)
-                    
-                    # Trigger Discord Webhook on entirely new profiles
-                    if is_new_user:
-                        try:
-                            from utils.webhook import notify_user
-                            notify_user(device_id, record["metadata"])
-                        except Exception:
-                            pass
+    def is_over_limit(self, device_id):
+        stats = self.get_usage_stats(device_id)
+        return stats["used"] >= stats["limit"]
 
-    def _check_and_reset(self, device_id: str) -> dict:
-        record = self._get_record(device_id)
-        if time.time() - record.get("first_used", time.time()) > 172800:
-            record["used"] = 0
-            record["first_used"] = time.time()
-            self._save_record(device_id, record)
-        return record
+    def consume(self, device_id, tokens):
+        def change(record):
+            if record["used"] + tokens > record.get("custom_limit", Config.MAX_USER_TOKENS):
+                return False
+            record["used"] += tokens
+            return True
+        return self._update(device_id, change)
 
-    def is_over_limit(self, device_id: str) -> bool:
-        with self.lock:
-            rec = self._check_and_reset(device_id)
-            return rec["used"] >= rec.get("custom_limit", Config.MAX_USER_TOKENS)
+    def track_usage(self, device_id, tokens):
+        self._update(device_id, lambda record: record.update(used=record["used"] + max(0, tokens)))
 
-    def track_usage(self, device_id: str, tokens: int):
-        with self.lock:
-            rec = self._check_and_reset(device_id)
-            rec["used"] += max(0, tokens)
-            self._save_record(device_id, rec)
+    def get_usage_stats(self, device_id):
+        return self._update(device_id, lambda record: {
+            "used": record["used"], "limit": record.get("custom_limit", Config.MAX_USER_TOKENS),
+            "first_used": record["first_used"]})
 
-    def get_usage_stats(self, device_id: str) -> dict:
-        with self.lock:
-            rec = self._check_and_reset(device_id)
-            return {
-                "used": rec["used"],
-                "limit": rec.get("custom_limit", Config.MAX_USER_TOKENS),
-                "first_used": rec.get("first_used", time.time())
-            }
-
-    def get_all_users(self) -> dict:
+    def get_all_users(self):
         if kv_db:
             users = {}
-            try:
-                # Fast Multi-Get (mget) prevents slow scans from timing out on Vercel
-                keys = list(kv_db.scan_iter(match="token_usage:*"))
-                if keys:
-                    values = kv_db.mget(keys)
-                    for k, v in zip(keys, values):
-                        if v:
-                            dev_id = k.split(":", 1)[1]
-                            users[dev_id] = json.loads(v)
-            except Exception as e:
-                logger.error(f"Failed pulling user KV list: {e}")
+            for key in kv_db.scan_iter(match="token_usage:*", count=100):
+                raw = kv_db.get(key)
+                if raw:
+                    users[key.split(":", 1)[1]] = json.loads(raw)
+                if len(users) >= 100:
+                    break
             return users
-            
-        with self.lock:
-            return dict(self.user_usage)
+        with local_lock:
+            return read_json(Config.TOKEN_DB_PATH, {})
 
-    def admin_update_user(self, device_id: str, new_used: int | None, new_limit: int | None):
-        with self.lock:
-            rec = self._get_record(device_id)
+    def admin_update_user(self, device_id, new_used, new_limit):
+        def change(record):
             if new_used is not None:
-                rec["used"] = new_used
+                record.update(used=new_used, first_used=time.time())
             if new_limit is not None:
-                rec["custom_limit"] = new_limit
-            self._save_record(device_id, rec)
+                record["custom_limit"] = new_limit
+        self._update(device_id, change)
+
 
 user_token_manager = UserTokenManager()

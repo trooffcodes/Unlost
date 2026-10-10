@@ -12,6 +12,7 @@ def compress_for_ocr(file_bytes: bytes, suffix: str, max_bytes: int = 1_000_000)
         img = Image.open(io.BytesIO(file_bytes))
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
+        img.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
         img = img.convert("L")
         
         img = ImageEnhance.Contrast(img).enhance(1.5)
@@ -48,6 +49,7 @@ def compress_for_llm(file_bytes: bytes, suffix: str, max_dimension: int = 1024) 
             else:
                 img = img.convert("RGB")
 
+        img = img.convert("RGB")
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
         out_io = io.BytesIO()
         img.save(out_io, format="JPEG", quality=85)

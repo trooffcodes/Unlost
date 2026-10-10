@@ -5,61 +5,38 @@ from typing import List, Dict, Any
 from config import Config, kv_db
 from utils.logger import logger
 
-db_lock = threading.Lock()
+from utils.storage import local_lock, read_json, write_json, update_record
+
 
 def _load_user_db(user_id: str) -> List[Dict[str, Any]]:
     if kv_db:
-        try:
-            data = kv_db.get(f"vector_db:{user_id}")
-            return json.loads(data) if data else []
-        except Exception as e:
-            logger.error(f"KV Load Error: {e}")
-            return []
+        data = kv_db.get(f"vector_db:{user_id}")
+        return json.loads(data) if data else []
+    with local_lock:
+        return [doc for doc in read_json(Config.DB_PATH, []) if doc.get("user_id") == user_id]
 
-    if Config.DB_PATH.exists():
-        try:
-            with open(Config.DB_PATH, "r", encoding="utf-8") as f:
-                db = json.load(f)
-                return [doc for doc in db if doc.get("user_id") == user_id]
-        except Exception as e:
-            logger.error(f"DB Load Error: {e}")
-    return []
-
-def _save_user_db(user_id: str, user_db: List[Dict[str, Any]]):
-    if kv_db:
-        try:
-            kv_db.set(f"vector_db:{user_id}", json.dumps(user_db))
-            return
-        except Exception as e:
-            logger.error(f"KV Save Error: {e}")
-
-    with db_lock:
-        db = []
-        if Config.DB_PATH.exists():
-            try:
-                with open(Config.DB_PATH, "r", encoding="utf-8") as f:
-                    db = json.load(f)
-            except Exception:
-                pass
-        db = [doc for doc in db if doc.get("user_id") != user_id]
-        db.extend(user_db)
-        try:
-            with open(Config.DB_PATH, "w", encoding="utf-8") as f:
-                json.dump(db, f, indent=2)
-        except Exception as e:
-            logger.error(f"DB Save Error: {e}")
 
 def add_to_store(user_id: str, filename: str, file_path: str, metadata: dict, embedding: List[float]):
-    db = _load_user_db(user_id)
-    db = [doc for doc in db if doc.get("filename") != filename]
-    db.append({
-        "user_id": user_id,
-        "filename": filename,
-        "file_path": file_path,
-        "metadata": metadata or {},
-        "embedding": embedding or []
-    })
-    _save_user_db(user_id, db)
+    document = {"user_id": user_id, "filename": filename, "file_path": file_path,
+                "metadata": metadata or {}, "embedding": embedding}
+
+    def change(db):
+        existing = next((i for i, doc in enumerate(db) if doc.get("filename") == filename), None)
+        if existing is not None:
+            db[existing] = document
+        else:
+            if len(db) >= Config.MAX_LIBRARY_FILES:
+                raise ValueError("Library is full; clear data before uploading more files")
+            db.append(document)
+
+    if kv_db:
+        update_record(f"vector_db:{user_id}", [], change)
+    else:
+        with local_lock:
+            db = read_json(Config.DB_PATH, [])
+            own = [doc for doc in db if doc.get("user_id") == user_id]
+            change(own)
+            write_json(Config.DB_PATH, [doc for doc in db if doc.get("user_id") != user_id] + own)
 
 def get_user_files(user_id: str) -> List[Dict[str, Any]]:
     db = _load_user_db(user_id)
@@ -118,20 +95,7 @@ def search_store(user_id: str, query_embedding: List[float], top_k: int = 10) ->
 def clear_user_data(user_id: str):
     if kv_db:
         kv_db.delete(f"vector_db:{user_id}")
-        return
-
-    with db_lock:
-        db = []
-        if Config.DB_PATH.exists():
-            try:
-                with open(Config.DB_PATH, "r", encoding="utf-8") as f:
-                    db = json.load(f)
-            except Exception:
-                pass
-        filtered = [doc for doc in db if doc.get("user_id") != user_id]
-        if len(filtered) != len(db):
-            try:
-                with open(Config.DB_PATH, "w", encoding="utf-8") as f:
-                    json.dump(filtered, f, indent=2)
-            except Exception:
-                pass
+    else:
+        with local_lock:
+            db = read_json(Config.DB_PATH, [])
+            write_json(Config.DB_PATH, [doc for doc in db if doc.get("user_id") != user_id])

@@ -15,9 +15,9 @@ OCR_SPACE_URL = "https://api.ocr.space/parse/image"
 
 UPLOAD_TIMEOUT = 30
 LLAMAPARSE_TIMEOUT = 60
-OCR_TIMEOUT = 30
+OCR_TIMEOUT = 10
 POLL_INTERVAL = 1.5
-MAX_OCR_PAGES = 10
+MAX_OCR_PAGES = 2
 
 
 def _response_json(response, service_name):
@@ -152,11 +152,11 @@ def _extract_pdf_text_locally(file_bytes: bytes) -> str:
     parts = []
 
     with fitz.open(stream=file_bytes, filetype="pdf") as document:
-        for page in document:
+        for page in list(document)[:20]:
             text = page.get_text("text")
 
             if text and text.strip():
-                parts.append(text.strip())
+                parts.append(text.strip()[:15000])
 
     return "\n\n".join(parts)
 
@@ -333,9 +333,9 @@ def extract_document_text(
     Extract text from supported PDFs and images.
 
     PDF fallback order:
-      1. LlamaParse
-      2. Local PDF text extraction
-      3. OCR.Space on rendered pages
+      1. Local PDF text extraction (first 20 pages)
+      2. On Vercel, return for Gemini vision (first two pages)
+      3. Locally, optional LlamaParse then OCR.Space (first two pages)
     """
     if not file_bytes:
         raise ValueError(f"Empty file: {filename}")
@@ -343,24 +343,6 @@ def extract_document_text(
     extension = Path(filename).suffix.lower()
 
     if extension in Config.ALLOWED_PDF_EXT:
-        # Primary PDF parser.
-        try:
-            text = llamaparse(file_bytes, filename)
-
-            if text and text.strip():
-                return text.strip()
-
-            logger.warning(
-                "LlamaParse returned empty text for %s",
-                filename,
-            )
-
-        except Exception:
-            logger.exception(
-                "LlamaParse failed for %s; trying local extraction.",
-                filename,
-            )
-
         # Fallback: extract any embedded PDF text.
         try:
             text = _extract_pdf_text_locally(file_bytes)
@@ -377,6 +359,17 @@ def extract_document_text(
                 "Local PDF extraction failed for %s",
                 filename,
             )
+
+        if Config.IS_VERCEL:
+            return ""  # Gemini analyzes the first two pages within the request budget.
+
+        if Config.LLAMA_CLOUD_API_KEY:
+            try:
+                text = llamaparse(file_bytes, filename)
+                if text:
+                    return text
+            except Exception:
+                logger.warning("LlamaParse unavailable; using OCR fallback")
 
         # Fallback: OCR scanned PDF pages.
         try:

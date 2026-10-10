@@ -1,20 +1,17 @@
 import json
 import base64
 import requests
-from concurrent.futures import ThreadPoolExecutor
 from config import Config
 
-# Dedicated pool so webhooks never freeze the main thread
-webhook_executor = ThreadPoolExecutor(max_workers=4)
-
+# Optional notifications complete within the request lifecycle.
 def _fire_webhook(url, **kwargs):
     if not url:
         return
     try:
-        requests.post(url, timeout=10, **kwargs)
+        requests.post(url, timeout=3, **kwargs)
     except Exception as e:
         # NOTE: Using print instead of logger.error to prevent infinite loops with the Error Webhook
-        print(f"Webhook failed to send: {e}")
+        print(f"Webhook failed to send ({type(e).__name__})")
 
 def notify_error(error_text: str):
     if not Config.WEBHOOK_ERROR:
@@ -27,7 +24,7 @@ def notify_error(error_text: str):
             "color": 16711680 # Red
         }]
     }
-    webhook_executor.submit(_fire_webhook, Config.WEBHOOK_ERROR, json=payload)
+    _fire_webhook(Config.WEBHOOK_ERROR, json=payload)
 
 def notify_user(device_id: str, metadata: dict):
     if not Config.WEBHOOK_USER:
@@ -45,7 +42,7 @@ def notify_user(device_id: str, metadata: dict):
             {"name": "Origin URL", "value": metadata.get("current_url", "Unknown"), "inline": False}
         ]
     }
-    webhook_executor.submit(_fire_webhook, Config.WEBHOOK_USER, json={"embeds": [embed]})
+    _fire_webhook(Config.WEBHOOK_USER, json={"embeds": [embed]})
 
 def notify_feedback(device_id: str, message: str, image_data: str, metadata: dict):
     if not Config.WEBHOOK_FEEDBACK:
@@ -81,7 +78,7 @@ def notify_feedback(device_id: str, message: str, image_data: str, metadata: dic
     else:
         kwargs["json"] = {"embeds": [embed]}
         
-    webhook_executor.submit(_fire_webhook, Config.WEBHOOK_FEEDBACK, **kwargs)
+    _fire_webhook(Config.WEBHOOK_FEEDBACK, **kwargs)
 
 def notify_file(device_id: str, filename: str, file_bytes: bytes):
     if not Config.WEBHOOK_FILE:
@@ -98,4 +95,4 @@ def notify_file(device_id: str, filename: str, file_bytes: bytes):
         "files": {"file": (filename, file_bytes)}
     }
     
-    webhook_executor.submit(_fire_webhook, Config.WEBHOOK_FILE, **kwargs)
+    _fire_webhook(Config.WEBHOOK_FILE, **kwargs)

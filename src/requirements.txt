@@ -1,8 +1,2 @@
-flask
-filetype
-python-dotenv
-pillow
-requests
-user_agents
-redis
-pymupdf
+# Compatibility with existing src-based local setup. Deploy from the repository root.
+-r ../requirements.txt

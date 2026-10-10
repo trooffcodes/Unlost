@@ -22,7 +22,7 @@ def log_telemetry(event_type: str, device_id: str, details: dict = None, metadat
         "details": details,
         "metadata": metadata
     }
-    logger.info(f"TELEMETRY [{event_type}] | Device: {device_id} | Details: {details}")
+    logger.info("Telemetry event: %s", event_type)
 
     try:
         if kv_db:
@@ -54,7 +54,7 @@ def log_feedback(device_id: str, message: str, image_data: str = None, metadata:
         "metadata": metadata
     }
     
-    logger.info(f"FEEDBACK | Device: {device_id} | Msg: {message} | Metadata: {metadata}")
+    logger.info("Feedback received")
     
     # Trigger Discord Webhook
     try:
@@ -78,11 +78,13 @@ def log_feedback(device_id: str, message: str, image_data: str = None, metadata:
                 with open(Config.FEEDBACK_DB_PATH, "w", encoding="utf-8") as f:
                     json.dump(feedbacks[-500:], f, indent=2)
     except Exception as e:
-        logger.error(f"Failed to log feedback: {e}")
+        logger.error("Failed to persist feedback (%s)", type(e).__name__)
+        raise
 
 def get_request_metadata(req, client_data: dict = None) -> dict:
     if client_data is None:
         client_data = {}
+    client_data = {key: str(value or "Unknown")[:512] for key, value in client_data.items()}
         
     ip_address = req.headers.get("X-Forwarded-For", req.remote_addr) or "localhost"
     ip_address = ip_address.split(',')[0].strip() # Isolate real IP from proxy chain

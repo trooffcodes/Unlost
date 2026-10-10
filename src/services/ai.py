@@ -2,6 +2,8 @@ import json
 import time
 import base64
 import mimetypes
+import filetype
+import math
 import threading
 import re
 import requests
@@ -99,10 +101,10 @@ def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
                 break
             try:
                 res = requests.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
+                    f"{Config.GROQ_BASE_URL}/chat/completions",
                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                     json=payload,
-                    timeout=25
+                    timeout=15
                 )
                 res.raise_for_status()
                 data = res.json()
@@ -110,17 +112,17 @@ def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
                 groq_manager.record_usage(key, tokens)
                 return json.loads(_clean_json_markdown(data["choices"][0]["message"]["content"]))
             except Exception as e:
-                logger.warning(f"Groq API error on key ending in ...{key[-4:] if len(key) > 4 else '***'}: {e}")
+                logger.warning("Groq API request failed (%s)", type(e).__name__)
                 groq_manager.penalize_key(key)
-                raise RuntimeError("All Groq keys unavailable or exhausted.")
+    raise RuntimeError("All Groq keys unavailable or exhausted.")
 
 
-def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
+def _call_gemini_vision(file_bytes: bytes, filename: str, text_content: str = "") -> Dict[str, Any]:
     if not Config.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured.")
 
-    mime_type, _ = mimetypes.guess_type(filename)
-    mime_type = mime_type or ("application/pdf" if filename.lower().endswith(".pdf") else "image/jpeg")
+    kind = filetype.guess(file_bytes)
+    mime_type = kind.mime if kind else "application/octet-stream"
 
     if filename.lower().endswith(".pdf") and len(file_bytes) > 0:
             try:
@@ -137,7 +139,7 @@ def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 
     b64_data = base64.b64encode(file_bytes).decode("utf-8")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_MODEL}:generateContent?key={Config.GEMINI_API_KEY}"
+    url = f"{Config.GEMINI_BASE_URL}/models/{Config.GEMINI_MODEL}:generateContent"
     payload = {
         "systemInstruction": {"parts": [{"text": GEMINI_SYSTEM_PROMPT}]},
         "contents": [{
@@ -150,7 +152,9 @@ def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
     }
 
-    res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=45)
+    if Path(filename).suffix.lower() in Config.ALLOWED_TEXT_EXT:
+        payload["contents"][0]["parts"] = [{"text": f"Filename: {filename}\n{text_content[:15000]}"}]
+    res = requests.post(url, json=payload, headers={"Content-Type": "application/json", "x-goog-api-key": Config.GEMINI_API_KEY}, timeout=40)
     res.raise_for_status()
     raw = res.json()["candidates"][0]["content"]["parts"][0]["text"]
     return json.loads(_clean_json_markdown(raw))
@@ -165,7 +169,7 @@ def generate_embedding(text: str) -> List[float]:
     if not Config.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured.")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_EMBEDDING_MODEL}:embedContent?key={Config.GEMINI_API_KEY}"
+    url = f"{Config.GEMINI_BASE_URL}/models/{Config.GEMINI_EMBEDDING_MODEL}:embedContent"
     payload = {
         "model": f"models/{Config.GEMINI_EMBEDDING_MODEL}",
         "content": {"parts": [{"text": clean_text}]}
@@ -173,11 +177,11 @@ def generate_embedding(text: str) -> List[float]:
     
     # We remove the silent try/except block. If rate limited, it needs to throw an error 
     # so we don't accidentally save empty vectors to the database.
-    res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+    res = requests.post(url, json=payload, headers={"Content-Type": "application/json", "x-goog-api-key": Config.GEMINI_API_KEY}, timeout=15)
     res.raise_for_status() 
     
     values = res.json().get("embedding", {}).get("values", [])
-    if values:
+    if isinstance(values, list) and values and all(type(v) in (float, int) and math.isfinite(v) for v in values):
         return values
         
     raise ValueError("Gemini API returned success but empty embedding values.")
@@ -202,17 +206,29 @@ def extract_semantic_metadata(file_bytes: bytes, filename: str, text_content: st
             groq_res = _call_groq(text_content, filename)
             if groq_res.get("sufficient") is not False:
                 groq_res.pop("sufficient", None)
-                default_meta.update({k: v for k, v in groq_res.items() if v is not None})
+                _merge_metadata(default_meta, groq_res)
                 return default_meta
         except Exception as e:
-            logger.info(f"Groq bypassed or failed for {filename}: {e}. Trying Gemini Vision...")
+            logger.info(f"Groq bypassed or failed for {filename}: {type(e).__name__}. Trying Gemini Vision...")
 
     if Config.GEMINI_API_KEY and len(file_bytes) > 0:
         try:
-            gemini_res = _call_gemini_vision(file_bytes, filename)
-            default_meta.update({k: v for k, v in gemini_res.items() if v is not None})
+            gemini_res = _call_gemini_vision(file_bytes, filename, text_content)
+            _merge_metadata(default_meta, gemini_res)
             return default_meta
         except Exception as e:
-            logger.warning(f"Gemini Vision failed for {filename}: {e}")
+            logger.warning(f"Gemini Vision failed for {filename}: {type(e).__name__}")
 
     return default_meta
+
+def _merge_metadata(target, source):
+    if not isinstance(source, dict):
+        raise ValueError("Provider metadata must be an object")
+    for key in target:
+        value = source.get(key)
+        if key == "tags" and isinstance(value, list):
+            target[key] = [tag[:80] for tag in value[:10] if isinstance(tag, str)]
+        elif key != "tags" and isinstance(value, str):
+            target[key] = value[:2000]
+        elif key == "total_amount" and type(value) in (int, float) and math.isfinite(value):
+            target[key] = value

@@ -22,20 +22,19 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# --- DISCORD ERROR WEBHOOK INTERCEPTOR ---
 class DiscordErrorHandler(logging.Handler):
     def emit(self, record):
         if record.levelno >= logging.ERROR:
             try:
                 from utils.webhook import notify_error
-                notify_error(self.format(record))
+                # Exceptions may contain credentials, document text or signed URLs.
+                notify_error(f"{record.module}: {record.levelname}. Check application logs for details.")
             except Exception:
                 pass
 
-discord_handler = DiscordErrorHandler()
-discord_handler.setFormatter(formatter)
-logger.addHandler(discord_handler)
-# -----------------------------------------
+
+logger.addHandler(DiscordErrorHandler())
+
 
 def time_it(func):
     @wraps(func)
@@ -49,6 +48,6 @@ def time_it(func):
             return result
         except Exception as e:
             elapsed = time.perf_counter() - start
-            logger.error(f"[{func.__name__}] Failed after {elapsed:.4f}s with error: {str(e)}")
+            logger.error(f"[{func.__name__}] Failed after {elapsed:.4f}s with error: {type(e).__name__}")
             raise
     return wrapper

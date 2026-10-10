@@ -1,4 +1,5 @@
 const AdminApp = (() => {
+    const { escapeHTML: esc, safeURL } = window.UnlostSafety;
     const DOM = {
         tabs: document.querySelectorAll('.admin-tab'),
         sections: document.querySelectorAll('.admin-section'),
@@ -64,23 +65,23 @@ const AdminApp = (() => {
                 <tr class="main-row">
                     <td>
                         <button class="expand-btn" onclick="window.AdminApp.toggleRow('user-detail-${i}', this)" title="Show Metadata">▼</button>
-                        <code>${id.substring(0,8)}...</code>
+                        <code>${esc(id.substring(0,8))}...</code>
                     </td>
                     <td><span style="color: var(--info)">${activeStr}</span></td>
-                    <td><strong>${u.used}</strong> / ${u.custom_limit || 20000}</td>
+                    <td><strong>${esc(u.used)}</strong> / ${esc(u.custom_limit ?? 20000)}</td>
                     <td>
-                        <button class="btn-sm bg-red" onclick="window.AdminApp.execAction('${id}', 'reset')">Reset</button>
-                        <button class="btn-sm bg-blue" onclick="window.AdminApp.setLimit('${id}')">Set Limit</button>
+                        <button class="btn-sm bg-red" data-action="reset" data-id="${esc(id)}">Reset</button>
+                        <button class="btn-sm bg-blue" data-action="set-limit" data-id="${esc(id)}">Set Limit</button>
                     </td>
                 </tr>
                 <tr id="user-detail-${i}" class="details-row hidden">
                     <td colspan="4">
                         <div class="details-panel">
                             <div class="details-grid">
-                                <div class="meta-item"><span>Device ID:</span> <span>${id} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${id}')">📋</button></span></div>
-                                <div class="meta-item"><span>IP Address:</span> <span>${ip} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${ip}')">📋</button></span></div>
-                                <div class="meta-item"><span>OS:</span> <span>${os}</span></div>
-                                <div class="meta-item"><span>Browser:</span> <span>${browser}</span></div>
+                                <div class="meta-item"><span>Device ID:</span> <span>${esc(id)} <button class="copy-icon-btn" data-action="copy" data-value="${esc(id)}">📋</button></span></div>
+                                <div class="meta-item"><span>IP Address:</span> <span>${esc(ip)} <button class="copy-icon-btn" data-action="copy" data-value="${esc(ip)}">📋</button></span></div>
+                                <div class="meta-item"><span>OS:</span> <span>${esc(os)}</span></div>
+                                <div class="meta-item"><span>Browser:</span> <span>${esc(browser)}</span></div>
                             </div>
                         </div>
                     </td>
@@ -91,7 +92,7 @@ const AdminApp = (() => {
 
     const renderTelemetry = (telemetryData) => {
         DOM.logView.innerHTML = telemetryData.map(t =>
-            `[${new Date(t.timestamp * 1000).toLocaleTimeString()}] [ID: ${t.device_id.substring(0,8)}...] <span style="color:var(--text-main)">${t.event.toUpperCase()}</span> ${JSON.stringify(t.details || {})}`
+            `[${new Date(t.timestamp * 1000).toLocaleTimeString()}] [ID: ${esc(t.device_id.substring(0,8))}...] <span style="color:var(--text-main)">${esc(t.event.toUpperCase())}</span> ${esc(JSON.stringify(t.details || {}))}`
         ).join("\n") || "No telemetry captured.";
         DOM.logView.scrollTop = DOM.logView.scrollHeight;
     };
@@ -108,9 +109,9 @@ const AdminApp = (() => {
             const deviceIcon = isMobile ? '📱' : '💻';
             
             // Extract from memory base64 (Vercel fix) OR fallback to physical disk
-            const imgHTML = f.image_data 
-                ? `<img src="${f.image_data}" class="feedback-thumb" onclick="window.AdminApp.openLightbox(this.src, event)" loading="lazy" alt="Screenshot">` 
-                : (f.image ? `<img src="/admin/feedback/image/${f.image}" class="feedback-thumb" onclick="window.AdminApp.openLightbox(this.src, event)" loading="lazy" alt="Screenshot">` : '');
+            const imgHTML = typeof f.image_data === "string" && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(f.image_data)
+                ? `<img src="${esc(f.image_data)}" class="feedback-thumb" onclick="window.AdminApp.openLightbox(this.src, event)" loading="lazy" alt="Screenshot">`
+                : (f.image ? `<img src="/admin/feedback/image/${encodeURIComponent(f.image)}" class="feedback-thumb" onclick="window.AdminApp.openLightbox(this.src, event)" loading="lazy" alt="Screenshot">` : '');
             
             return `
                 <div class="card feedback-card">
@@ -122,20 +123,20 @@ const AdminApp = (() => {
                         </div>
                         <button class="expand-btn" onclick="window.AdminApp.toggleRow('fb-detail-${i}', this)">[+] Details</button>
                     </div>
-                    <div class="feedback-msg">${f.message}</div>
+                    <div class="feedback-msg">${esc(f.message)}</div>
                     ${imgHTML}
                     
                     <div id="fb-detail-${i}" class="details-panel hidden">
                         <div class="details-grid">
-                            <div class="meta-item"><span>IP Address:</span> <span>${meta.ip || meta.ip_address || 'Unknown'} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${meta.ip || meta.ip_address}')">📋</button></span></div>
-                            <div class="meta-item"><span>OS:</span> <span>${meta.os || 'Unknown OS'}</span></div>
-                            <div class="meta-item"><span>Browser:</span> <span>${meta.browser || 'Unknown Browser'}</span></div>
-                            <div class="meta-item"><span>Resolution:</span> <span>${meta.resolution || 'N/A'}</span></div>
-                            <div class="meta-item"><span>Time on Page:</span> <span>${meta.time_on_page || 'N/A'}</span></div>
-                            <div class="meta-item full-width" style="word-break: break-all;"><span>URL:</span> <a href="${meta.current_url || '#'}" target="_blank" style="color:var(--info); text-decoration:underline;">${meta.current_url || 'N/A'}</a></div>
+                            <div class="meta-item"><span>IP Address:</span> <span>${esc(meta.ip || meta.ip_address || 'Unknown')} <button class="copy-icon-btn" data-action="copy" data-value="${esc(meta.ip || meta.ip_address)}">📋</button></span></div>
+                            <div class="meta-item"><span>OS:</span> <span>${esc(meta.os || 'Unknown OS')}</span></div>
+                            <div class="meta-item"><span>Browser:</span> <span>${esc(meta.browser || 'Unknown Browser')}</span></div>
+                            <div class="meta-item"><span>Resolution:</span> <span>${esc(meta.resolution || 'N/A')}</span></div>
+                            <div class="meta-item"><span>Time on Page:</span> <span>${esc(meta.time_on_page || 'N/A')}</span></div>
+                            <div class="meta-item full-width" style="word-break: break-all;"><span>URL:</span> <a href="${esc(safeURL(meta.current_url))}" target="_blank" rel="noopener noreferrer" style="color:var(--info); text-decoration:underline;">${esc(meta.current_url || 'N/A')}</a></div>
                             <div class="meta-item full-width" style="margin-top: 0.5rem; border-top: 1px dashed var(--border); padding-top: 0.5rem;">
                                 <span>Raw User-Agent:</span> 
-                                <span style="font-family: monospace; font-size: 0.7rem; color: var(--text-muted);">${userAgent || 'N/A'}</span>
+                                <span style="font-family: monospace; font-size: 0.7rem; color: var(--text-muted);">${esc(userAgent || 'N/A')}</span>
                             </div>
                         </div>
                     </div>
@@ -148,12 +149,12 @@ const AdminApp = (() => {
         execAction: async (device_id, action, limit = null) => {
             if (!confirm(`Execute [${action.toUpperCase()}] on device: ${device_id}?`)) return;
             try {
-                const res = await fetch("/admin/api/user", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ device_id, action, limit }) });
+                const res = await fetch("/admin/api/user", { method: "POST", headers: {"Content-Type": "application/json", "X-Unlost-Request": "1"}, body: JSON.stringify({ device_id, action, limit }) });
                 if(res.ok) fetchAdminData();
             } catch(e) { alert("Network error processing administrative action."); }
         },
         setLimit: (id) => {
-            const limit = prompt(`Enter new token limit for ${id}:`);
+            const limit = prompt(`Enter new token limit for ${esc(id)}:`);
             if (limit && !isNaN(limit)) window.AdminApp.execAction(id, "set_limit", parseInt(limit));
         },
         openLightbox: (src, e) => {
@@ -184,6 +185,13 @@ const AdminApp = (() => {
         }
     };
 
+    document.addEventListener('click', event => {
+        const button = event.target.closest('[data-action]');
+        if (!button) return;
+        if (button.dataset.action === 'reset') window.AdminApp.execAction(button.dataset.id, 'reset');
+        if (button.dataset.action === 'set-limit') window.AdminApp.setLimit(button.dataset.id);
+        if (button.dataset.action === 'copy') window.AdminApp.copyTxt(button, button.dataset.value);
+    });
     setupTabs();
     fetchAdminData();
     setInterval(fetchAdminData, 8000);

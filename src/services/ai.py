@@ -111,7 +111,7 @@ def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Groq API error on key ending in ...{key[-4:] if len(key) > 4 else '***'}: {e}")
                 groq_manager.penalize_key(key)
-        raise RuntimeError("All Groq keys unavailable or exhausted.")
+                raise RuntimeError("All Groq keys unavailable or exhausted.")
 
 
 def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:

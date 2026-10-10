@@ -42,7 +42,7 @@ class Config:
     MAX_FILE_SIZE = 15 * 1024 * 1024       
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  
     MAX_FILES_PER_BATCH = 50
-    MAX_USER_TOKENS = 5_000
+    MAX_USER_TOKENS = 20_000
     
     ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
     ALLOWED_PDF_EXT = {".pdf"}

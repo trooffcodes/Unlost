@@ -217,9 +217,7 @@ def llamaparse(
     api_key = Config.LLAMA_CLOUD_API_KEY
 
     if not api_key:
-        raise ValueError(
-            "LLAMA_CLOUD_API_KEY is not configured in Config."
-        )
+        raise ValueError("LLAMA_CLOUD_API_KEY is not configured in Config.")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -230,61 +228,35 @@ def llamaparse(
     upload_response = requests.post(
         f"{LLAMA_BASE_URL}/api/v1/beta/files",
         headers=headers,
-        files={
-            "file": (
-                filename,
-                io.BytesIO(file_bytes),
-                "application/pdf",
-            )
-        },
+        files={"file": (filename, io.BytesIO(file_bytes), "application/pdf")},
         data={"purpose": "parse"},
         timeout=UPLOAD_TIMEOUT,
     )
     upload_response.raise_for_status()
 
-    upload_data = _response_json(
-        upload_response,
-        "LlamaParse upload",
-    )
-
+    upload_data = _response_json(upload_response, "LlamaParse upload")
     file_id = upload_data.get("id")
 
     if not file_id:
-        raise RuntimeError(
-            "LlamaParse upload response has no file ID."
-        )
+        raise RuntimeError("LlamaParse upload response has no file ID.")
 
     # 2. Create the parsing job.
     job_response = requests.post(
         f"{LLAMA_BASE_URL}/api/v2/parse",
-        headers={
-            **headers,
-            "Content-Type": "application/json",
-        },
-        json={
-            "file_id": file_id,
-            "tier": "fast",
-            "version": "latest",
-        },
+        headers={**headers, "Content-Type": "application/json"},
+        json={"file_id": file_id, "tier": "fast", "version": "latest"},
         timeout=UPLOAD_TIMEOUT,
     )
     job_response.raise_for_status()
 
-    job_data = _response_json(
-        job_response,
-        "LlamaParse job creation",
-    )
-
+    job_data = _response_json(job_response, "LlamaParse job creation")
     job_id = job_data.get("id")
 
     if not job_id:
-        raise RuntimeError(
-            "LlamaParse job creation response has no job ID."
-        )
+        raise RuntimeError("LlamaParse job creation response has no job ID.")
 
     # 3. Poll until the job completes or times out.
     start = time.monotonic()
-
     while time.monotonic() - start < timeout:
         response = requests.get(
             f"{LLAMA_BASE_URL}/api/v2/parse/{job_id}",
@@ -292,27 +264,20 @@ def llamaparse(
             timeout=20,
         )
         response.raise_for_status()
-
         data = _response_json(response, "LlamaParse status")
-
-        # Both missing and explicit null values are handled.
         job = data.get("job") or {}
 
         if not isinstance(job, dict):
-            raise RuntimeError(
-                "LlamaParse returned an invalid job object."
-            )
+            raise RuntimeError("LlamaParse returned an invalid job object.")
 
         status = job.get("status")
 
         if status == "COMPLETED":
-            full_markdown = data.get("markdown_full")
-
-            if (
-                isinstance(full_markdown, str)
-                and full_markdown.strip()
-            ):
-                return full_markdown.strip()
+            # FIX: Check for direct string representations first to prevent crashes
+            for key in ("markdown_full", "markdown", "text_full", "text"):
+                val = data.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
 
             markdown = data.get("markdown") or {}
 
@@ -323,21 +288,27 @@ def llamaparse(
             else:
                 pages = []
 
+            # FIX: Fallback to checking "text" key for pages if markdown is missing them
+            if not pages:
+                text_dict = data.get("text") or {}
+                if isinstance(text_dict, dict):
+                    pages = text_dict.get("pages") or []
+                elif isinstance(text_dict, list):
+                    pages = text_dict
+
             if not isinstance(pages, list):
-                raise RuntimeError(
-                    "LlamaParse returned invalid Markdown pages."
-                )
+                pages = []
 
             parts = []
-
             for page in pages:
                 if not isinstance(page, dict):
                     continue
 
-                text = page.get("markdown")
+                # Check both properties to ensure we don't skip over text data
+                page_text = page.get("markdown") or page.get("text")
 
-                if isinstance(text, str) and text.strip():
-                    parts.append(text.strip())
+                if isinstance(page_text, str) and page_text.strip():
+                    parts.append(page_text.strip())
 
             if parts:
                 return "\n\n".join(parts)
@@ -348,21 +319,14 @@ def llamaparse(
             )
 
         if status in ("FAILED", "CANCELLED"):
-            raise RuntimeError(
-                f"LlamaParse {status}: {_error_message(data)}"
-            )
+            raise RuntimeError(f"LlamaParse {status}: {_error_message(data)}")
 
         if not status:
-            logger.warning(
-                "LlamaParse returned no job status; response keys: %s",
-                list(data.keys()),
-            )
+            logger.warning("LlamaParse returned no job status; response keys: %s", list(data.keys()))
 
         time.sleep(POLL_INTERVAL)
 
-    raise TimeoutError(
-        f"LlamaParse timed out after {timeout}s for {filename}."
-    )
+    raise TimeoutError(f"LlamaParse timed out after {timeout}s for {filename}.")
 
 
 @time_it

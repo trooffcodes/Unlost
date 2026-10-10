@@ -82,7 +82,7 @@ def _clean_json_markdown(text: str) -> str:
     return cleaned.strip()
 
 def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
-    trimmed_text = ocr_text[:12000]
+    trimmed_text = ocr_text[:2000]
     payload = {
         "model": Config.GROQ_MODEL,
         "messages": [
@@ -121,6 +121,20 @@ def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
     mime_type, _ = mimetypes.guess_type(filename)
     mime_type = mime_type or ("application/pdf" if filename.lower().endswith(".pdf") else "image/jpeg")
+
+    if filename.lower().endswith(".pdf") and len(file_bytes) > 0:
+            try:
+                import fitz
+                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                    if len(doc) > 2:
+                        new_doc = fitz.open()
+                        new_doc.insert_pdf(doc, from_page=0, to_page=1)
+                        file_bytes = new_doc.write()
+                        new_doc.close()
+            except Exception as e:
+                logger.warning(f"Failed to trim PDF for Gemini Vision: {e}")
+
+                
     b64_data = base64.b64encode(file_bytes).decode("utf-8")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.GEMINI_MODEL}:generateContent?key={Config.GEMINI_API_KEY}"
@@ -147,7 +161,7 @@ def generate_embedding(text: str) -> List[float]:
     if not text:
         return []
 
-    clean_text = text[:8000].strip()
+    clean_text = text[:2000].strip()
     if not Config.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured.")
 

@@ -46,21 +46,21 @@ const AdminApp = (() => {
             return `
                 <tr class="main-row">
                     <td>
-                        <button class="expand-btn" onclick="AdminApp.toggleRow('user-detail-${i}', this)" title="Show Metadata">▼</button>
+                        <button class="expand-btn" onclick="window.AdminApp.toggleRow('user-detail-${i}', this)" title="Show Metadata">▼</button>
                         <code>${id.substring(0,8)}...</code>
                     </td>
                     <td><strong>${u.used}</strong> / ${u.custom_limit || 20000}</td>
                     <td>
-                        <button class="btn-sm bg-red" onclick="AdminApp.execAction('${id}', 'reset')">Reset</button>
-                        <button class="btn-sm bg-blue" onclick="AdminApp.setLimit('${id}')">Set Limit</button>
+                        <button class="btn-sm bg-red" onclick="window.AdminApp.execAction('${id}', 'reset')">Reset</button>
+                        <button class="btn-sm bg-blue" onclick="window.AdminApp.setLimit('${id}')">Set Limit</button>
                     </td>
                 </tr>
                 <tr id="user-detail-${i}" class="details-row hidden">
                     <td colspan="3">
                         <div class="details-panel">
                             <div class="details-grid">
-                                <div class="meta-item"><span>Device ID:</span> <span>${id} <button class="copy-icon-btn" onclick="AdminApp.copyTxt(this, '${id}')">📋</button></span></div>
-                                <div class="meta-item"><span>IP Address:</span> <span>${ip} <button class="copy-icon-btn" onclick="AdminApp.copyTxt(this, '${ip}')">📋</button></span></div>
+                                <div class="meta-item"><span>Device ID:</span> <span>${id} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${id}')">📋</button></span></div>
+                                <div class="meta-item"><span>IP Address:</span> <span>${ip} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${ip}')">📋</button></span></div>
                                 <div class="meta-item"><span>OS:</span> <span>${os}</span></div>
                                 <div class="meta-item"><span>Browser:</span> <span>${browser}</span></div>
                             </div>
@@ -90,7 +90,7 @@ const AdminApp = (() => {
             const isMobile = /Mobi|Android|iPhone|iPad/i.test(userAgent) || meta.device_type === 'mobile';
             const deviceIcon = isMobile ? '📱' : '💻';
             
-            const imgHTML = f.image ? `<img src="/admin/feedback/image/${f.image}" class="feedback-thumb" onclick="AdminApp.openLightbox('/admin/feedback/image/${f.image}', event)" loading="lazy" alt="Screenshot">` : '';
+            const imgHTML = f.image ? `<img src="/admin/feedback/image/${f.image}" class="feedback-thumb" onclick="window.AdminApp.openLightbox('/admin/feedback/image/${f.image}', event)" loading="lazy" alt="Screenshot">` : '';
             
             return `
                 <div class="card feedback-card">
@@ -100,14 +100,14 @@ const AdminApp = (() => {
                             <span class="feedback-date">${dateStr}</span>
                             <span class="device-icon" title="Device Platform">${deviceIcon}</span>
                         </div>
-                        <button class="expand-btn" onclick="AdminApp.toggleRow('fb-detail-${i}', this)">[+] Details</button>
+                        <button class="expand-btn" onclick="window.AdminApp.toggleRow('fb-detail-${i}', this)">[+] Details</button>
                     </div>
                     <div class="feedback-msg">${f.message}</div>
                     ${imgHTML}
                     
                     <div id="fb-detail-${i}" class="details-panel hidden">
                         <div class="details-grid">
-                            <div class="meta-item"><span>IP Address:</span> <span>${meta.ip || 'Unknown'} <button class="copy-icon-btn" onclick="AdminApp.copyTxt(this, '${meta.ip}')">📋</button></span></div>
+                            <div class="meta-item"><span>IP Address:</span> <span>${meta.ip || 'Unknown'} <button class="copy-icon-btn" onclick="window.AdminApp.copyTxt(this, '${meta.ip}')">📋</button></span></div>
                             <div class="meta-item"><span>OS:</span> <span>${meta.os || 'Unknown OS'}</span></div>
                             <div class="meta-item"><span>Browser:</span> <span>${meta.browser || 'Unknown Browser'}</span></div>
                             <div class="meta-item"><span>Resolution:</span> <span>${meta.resolution || 'N/A'}</span></div>
@@ -134,7 +134,7 @@ const AdminApp = (() => {
         },
         setLimit: (id) => {
             const limit = prompt(`Enter new token limit for ${id}:`);
-            if (limit && !isNaN(limit)) AdminApp.execAction(id, "set_limit", parseInt(limit));
+            if (limit && !isNaN(limit)) window.AdminApp.execAction(id, "set_limit", parseInt(limit));
         },
         openLightbox: (src, e) => {
             e.stopPropagation();

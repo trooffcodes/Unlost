@@ -148,8 +148,15 @@ def submit_feedback():
     image_data = None
     if image_file and image_file.filename:
         img_bytes = image_file.read()
+        try:
+            from utils.media import compress_for_llm
+            ext = Path(image_file.filename).suffix or ".jpg"
+            img_bytes = compress_for_llm(img_bytes, ext, max_dimension=800)
+        except Exception as e:
+            logger.error(f"Error compressing feedback image: {e}")
+            
         b64_encoded = base64.b64encode(img_bytes).decode('utf-8')
-        mime_type = image_file.mimetype or "image/png"
+        mime_type = image_file.mimetype or "image/jpeg"
         image_data = f"data:{mime_type};base64,{b64_encoded}"
     
     if message or image_data:

@@ -144,14 +144,22 @@ const App = (() => {
         const files = Array.from(fileList);
         if (!files.length) return;
         if (files.length > CONFIG.MAX_BATCH_SIZE) return showToast(`Max ${CONFIG.MAX_BATCH_SIZE} files allowed.`, true);
+        
+        DOM.uploadModal.classList.add('show');
+        DOM.uploadList.innerHTML = files.map(f => createUploadItemHTML(f.name, f.size > CONFIG.MAX_FILE_SIZE ? "ERROR: > 15MB" : "Queued")).join('');
+        DOM.uploadPhaseText.innerText = "Uploading...";
+        
+        const validFiles = files.filter(f => f.size <= CONFIG.MAX_FILE_SIZE);
+        if(!validFiles.length) {
+            setTimeout(() => DOM.uploadModal.classList.remove('show'), 3500);
+            return;
+        }
+
         const formData = new FormData();
-        for (const file of files) {
-            if (file.size > CONFIG.MAX_FILE_SIZE) { showToast(`${file.name} > 15MB. Skipped.`, true); continue; }
+        for (const file of validFiles) {
             formData.append('files', file);
         }
-        DOM.uploadModal.classList.add('show');
-        DOM.uploadList.innerHTML = files.map(f => createUploadItemHTML(f.name, "Queued")).join('');
-        DOM.uploadPhaseText.innerText = "Uploading...";
+        
         const res = await apiFetch('/upload', { method: 'POST', body: formData });
         res && res.batch_id ? startPolling(res.batch_id) : DOM.uploadModal.classList.remove('show');
     };

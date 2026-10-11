@@ -14,6 +14,7 @@ class Config:
     WEBHOOK_USER = os.getenv("WEBHOOK_USER")
     WEBHOOK_FILE = os.getenv("WEBHOOK_FILE")
     WEBHOOK_ERROR = os.getenv("WEBHOOK_ERROR")
+    WEBHOOK_LOGS = os.getenv("WEBHOOK_LOGS") # New Debug Webhook
     # -----------------------------
 
     SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key")
@@ -42,7 +43,7 @@ class Config:
     MAX_FILE_SIZE = 15 * 1024 * 1024       
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  
     MAX_FILES_PER_BATCH = 50
-    MAX_USER_TOKENS = 5_000
+    MAX_USER_TOKENS = 50_000
     
     ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
     ALLOWED_PDF_EXT = {".pdf"}
@@ -53,10 +54,11 @@ class Config:
 
     @classmethod
     def init_dirs(cls):
-        for d in [cls.USER_DATA_DIR, cls.DB_PATH.parent, cls.DEBUG_DIR, cls.FEEDBACK_DIR]:
-            try:
-                d.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                pass 
+        if not cls.IS_VERCEL:
+            for d in [cls.USER_DATA_DIR, cls.DB_PATH.parent, cls.DEBUG_DIR, cls.FEEDBACK_DIR]:
+                try:
+                    d.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    pass 
 
 Config.init_dirs()

@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from config import Config, kv_db
 from utils.logger import logger
 
-db_lock = threading.Lock()
+db_lock = threading.RLock()
 
 def _load_user_db(user_id: str) -> List[Dict[str, Any]]:
     if kv_db:
@@ -33,14 +33,13 @@ def _save_user_db(user_id: str, user_db: List[Dict[str, Any]]):
         except Exception as e:
             logger.error(f"KV Save Error: {e}")
 
-    with db_lock:
-        db = []
-        if Config.DB_PATH.exists():
-            try:
-                with open(Config.DB_PATH, "r", encoding="utf-8") as f:
-                    db = json.load(f)
-            except Exception:
-                pass
+    if Config.DB_PATH.exists():
+        try:
+            with open(Config.DB_PATH, "r", encoding="utf-8") as f:
+                db = json.load(f)
+        except Exception:
+            db = []
+            
         db = [doc for doc in db if doc.get("user_id") != user_id]
         db.extend(user_db)
         try:
@@ -50,16 +49,17 @@ def _save_user_db(user_id: str, user_db: List[Dict[str, Any]]):
             logger.error(f"DB Save Error: {e}")
 
 def add_to_store(user_id: str, filename: str, file_path: str, metadata: dict, embedding: List[float]):
-    db = _load_user_db(user_id)
-    db = [doc for doc in db if doc.get("filename") != filename]
-    db.append({
-        "user_id": user_id,
-        "filename": filename,
-        "file_path": file_path,
-        "metadata": metadata or {},
-        "embedding": embedding or []
-    })
-    _save_user_db(user_id, db)
+    with db_lock:
+        db = _load_user_db(user_id)
+        db = [doc for doc in db if doc.get("filename") != filename]
+        db.append({
+            "user_id": user_id,
+            "filename": filename,
+            "file_path": file_path,
+            "metadata": metadata or {},
+            "embedding": embedding or []
+        })
+        _save_user_db(user_id, db)
 
 def get_user_files(user_id: str) -> List[Dict[str, Any]]:
     db = _load_user_db(user_id)

@@ -22,21 +22,21 @@ jobs_tracker = {}
 jobs_lock = threading.Lock()
 
 def _update_job_status(batch_id: str, filename: str, status: str):
-    if kv_db:
-        try:
-            val = kv_db.get(f"job:{batch_id}")
-            if val:
-                job = json.loads(val)
-                job["files"][filename] = status
-                statuses = list(job["files"].values())
-                if all(s.startswith("DONE") or s.startswith("ERROR") for s in statuses):
-                    job["status"] = "completed"
-                kv_db.set(f"job:{batch_id}", json.dumps(job), ex=86400)
-            return
-        except Exception as e:
-            logger.error(f"Job update KV Error: {e}")
-
     with jobs_lock:
+        if kv_db:
+            try:
+                val = kv_db.get(f"job:{batch_id}")
+                if val:
+                    job = json.loads(val)
+                    job["files"][filename] = status
+                    statuses = list(job["files"].values())
+                    if all(s.startswith("DONE") or s.startswith("ERROR") for s in statuses):
+                        job["status"] = "completed"
+                    kv_db.set(f"job:{batch_id}", json.dumps(job), ex=86400)
+                return
+            except Exception as e:
+                logger.error(f"Job update KV Error: {e}")
+
         if batch_id not in jobs_tracker:
             return
         jobs_tracker[batch_id]["files"][filename] = status
@@ -87,15 +87,17 @@ def process_single_file(batch_id: str, device_id: str, filename: str, file_bytes
 
         folder_clean = secure_filename(metadata.get("suggested_folder", "General")) or "General"
         target_dir = Config.USER_DATA_DIR / device_id / folder_clean
+        rel_path = f"{folder_clean}/{filename}"
 
-        try:
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target_file = target_dir / filename
-            with open(target_file, "wb") as f:
-                f.write(file_bytes)
-            rel_path = str(target_file.relative_to(Config.USER_DATA_DIR))
-        except Exception:
-            rel_path = f"{folder_clean}/{filename}"
+        if not Config.IS_VERCEL:
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                target_file = target_dir / filename
+                with open(target_file, "wb") as f:
+                    f.write(file_bytes)
+                rel_path = str(target_file.relative_to(Config.USER_DATA_DIR))
+            except Exception:
+                pass
 
         semantic_text = metadata.get("semantic_search_text") or f"{filename} {extracted_text[:400]}"
         embedding = generate_embedding(semantic_text)

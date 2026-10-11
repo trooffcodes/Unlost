@@ -123,16 +123,16 @@ def _call_gemini_vision(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     mime_type = mime_type or ("application/pdf" if filename.lower().endswith(".pdf") else "image/jpeg")
 
     if filename.lower().endswith(".pdf") and len(file_bytes) > 0:
-            try:
-                import fitz
-                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-                    if len(doc) > 2:
-                        new_doc = fitz.open()
-                        new_doc.insert_pdf(doc, from_page=0, to_page=1)
-                        file_bytes = new_doc.write()
-                        new_doc.close()
-            except Exception as e:
-                logger.warning(f"Failed to trim PDF for Gemini Vision: {e}")
+        try:
+            import fitz
+            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                if len(doc) > 2:
+                    new_doc = fitz.open()
+                    new_doc.insert_pdf(doc, from_page=0, to_page=1)
+                    file_bytes = new_doc.tobytes()
+                    new_doc.close()
+        except Exception as e:
+            logger.warning(f"Failed to trim PDF for Gemini Vision: {e}")
 
                 
     b64_data = base64.b64encode(file_bytes).decode("utf-8")

@@ -47,7 +47,7 @@ def _update_job_status(batch_id: str, filename: str, status: str):
 def _read_native_text(file_bytes: bytes) -> str:
     for encoding in ("utf-8", "latin-1", "cp1252"):
         try:
-            return file_bytes.decode(encoding)[:15000]
+            return file_bytes.decode(encoding)[:3000]
         except UnicodeDecodeError:
             continue
     return ""

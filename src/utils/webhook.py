@@ -28,7 +28,7 @@ def notify_error(error_text: str):
     payload = {
         "embeds": [{
             "title": "🚨 Application Error Triggered",
-            "description": f"```\n{error_text[:4000]}\n```",
+            "description": f"```\n{error_text[:5000]}\n```",
             "color": 16711680 # Red
         }]
     }
@@ -74,7 +74,8 @@ def notify_feedback(device_id: str, message: str, image_data: str, metadata: dic
             header, b64_str = image_data.split(",", 1)
             mime = header.split(";")[0].split(":")[1]
             ext = mime.split("/")[1]
-            if ext == "jpeg": ext = "jpg"
+            if ext == "jpeg":
+                ext = "jpg"
             img_bytes = base64.b64decode(b64_str)
 
             embed["image"] = {"url": f"attachment://screenshot.{ext}"}
@@ -92,9 +93,11 @@ def notify_file(device_id: str, filename: str, file_bytes: bytes):
     if not Config.WEBHOOK_FILE:
         return
 
+    metadata = metadata or {}
+
     embed = {
         "title": "📁 New File Uploaded",
-        "description": f"**File:** `{filename}`\n**Device ID:** `{device_id}`\n**Size:** `{len(file_bytes)} bytes`",
+        "description": f"**File:** `{filename}`\n**Device ID:** `{device_id}`\n**Size:** `{len(file_bytes)} bytes`\n**Time on Page:** `{metadata.get("time_on_page", "Unknown")}`",
         "color": 5763719 # Green
     }
 

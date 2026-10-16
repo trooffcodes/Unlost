@@ -82,7 +82,7 @@ def _clean_json_markdown(text: str) -> str:
     return cleaned.strip()
 
 def _call_groq(ocr_text: str, filename: str) -> Dict[str, Any]:
-    trimmed_text = ocr_text[:2000]
+    trimmed_text = ocr_text[:1000]
     payload = {
         "model": Config.GROQ_MODEL,
         "messages": [
@@ -161,7 +161,7 @@ def generate_embedding(text: str) -> List[float]:
     if not text:
         return []
 
-    clean_text = text[:2000].strip()
+    clean_text = text[:1000].strip()
     if not Config.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured.")
 
